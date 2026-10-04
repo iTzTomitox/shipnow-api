@@ -1,10 +1,12 @@
 import express from 'express'
 import productsRouter from './routes/products.router.js'
 import { httpError } from './utils/httpError.js'
+import usersRouter from './routes/users.router.js'
 
 const app = express()
 
 app.use(express.json())
+app.use('/api/users', usersRouter)
 
 app.use('/api/products', productsRouter)
 
