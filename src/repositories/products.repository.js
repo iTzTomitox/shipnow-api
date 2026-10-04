@@ -31,7 +31,7 @@ export default class ProductsRepository {
   async updateById(id, data) {
     if (!mongoose.isValidObjectId(id)) return null
     return this.model
-      .findByIdAndUpdate(id, data, { new: true, runValidators: true, projection: PROJECTION })
+      .findByIdAndUpdate(id, data, { returnDocument: 'after', runValidators: true, projection: PROJECTION })
       .lean()
   }
 
