@@ -28,6 +28,14 @@ export default class ProductsRepository {
     return plain
   }
 
+    async insertMany(docs) {
+    const created = await this.model.insertMany(docs)
+    return created.map((doc) => {
+      const { __v, ...plain } = doc.toObject()
+      return plain
+    })
+  }
+
   async updateById(id, data) {
     if (!mongoose.isValidObjectId(id)) return null
     return this.model
