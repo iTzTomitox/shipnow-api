@@ -45,7 +45,7 @@ npm test
 | Variable | Descripción | Ejemplo |
 |---|---|---|
 | `PORT` | Puerto del servidor | `3000` |
-| `MONGODB_URI` | URI de conexión a MongoDB | `mongodb+srv://usuario:clave@cluster.mongodb.net/shipnow` |
+| `MONGODB_URI` | URI de conexión a MongoDB (la de tu cluster de Atlas) | `mongodb+srv://<usuario>:<clave>@<cluster>/shipnow` |
 | `NODE_ENV` | Entorno de ejecución: `development`, `test` o `production` | `development` |
 
 Las tres son obligatorias. La configuración se valida al arrancar (`src/config/buildConfig.js`): si falta alguna o tiene un valor inválido, la app **no arranca** y muestra un error descriptivo. Por ejemplo:
