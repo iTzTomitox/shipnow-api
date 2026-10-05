@@ -3,7 +3,7 @@ import { httpError } from '../utils/httpError.js'
 import { productsRepository } from '../repositories/products.repository.js'
 
 // Regla de negocio: el estado depende del stock, nunca lo decide el cliente
-const statusFromStock = (stock) =>
+export const statusFromStock = (stock) =>
   stock > 0 ? PRODUCT_STATUS.AVAILABLE : PRODUCT_STATUS.OUT_OF_STOCK
 
 // Valida y arma una lista blanca: solo name, price y stock.
