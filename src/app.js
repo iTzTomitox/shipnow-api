@@ -1,14 +1,20 @@
 import express from 'express'
+import config from './config/index.js'
 import productsRouter from './routes/products.router.js'
-import { httpError } from './utils/httpError.js'
 import usersRouter from './routes/users.router.js'
+import mocksRouter from './routes/mocks.router.js'
+import { httpError } from './utils/httpError.js'
+
 
 const app = express()
 
 app.use(express.json())
+app.use('/api/products', productsRouter)
 app.use('/api/users', usersRouter)
 
-app.use('/api/products', productsRouter)
+if (config.nodeEnv !== 'production') {
+  app.use('/api/mocks', mocksRouter)
+}
 
 app.use((req, res, next) => {
   next(httpError(404, `Ruta no encontrada: ${req.method} ${req.originalUrl}`))
