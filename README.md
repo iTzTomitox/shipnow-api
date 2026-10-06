@@ -2,7 +2,7 @@
 
 API REST de logística para gestionar usuarios, productos, pedidos y entregas. Proyecto integrador de **Programación Backend III** (CoderHouse).
 
-**Estado actual:** Pre-entrega 1 — arquitectura por capas y configuración de entorno validada.
+**Estado actual:** Pre-entrega 2 — módulo de mocking y carga de datos de prueba.
 
 ## Tecnologías
 
@@ -63,6 +63,7 @@ src/
 ├── config/          # buildConfig (validación), env.config (único lector de process.env), db
 ├── constants/       # roles y estados del dominio (Object.freeze)
 ├── controllers/     # única puerta de entrada HTTP: req/res y status codes
+├── mocks/           # generadores de datos simulados (funciones puras, sin base de datos)
 ├── models/          # esquemas de Mongoose, sin lógica
 ├── repositories/    # único lugar que conoce Mongoose/MongoDB
 ├── routes/          # solo conectan path con método del controller
@@ -105,7 +106,7 @@ El criterio fue: **el Service decide, el Repository ejecuta.**
 - **Ids con formato inválido:** devuelve `null` en lugar de dejar escapar un `CastError` de Mongoose. Así el Service solo ve "no existe" y responde 404, sin saber qué es un ObjectId.
 - **Filtros:** sabe filtrar por `status` o `role` cuando se lo piden, pero no decide cuándo filtrar.
 
-Con esta separación, las reglas de negocio se testean sin MongoDB (36 tests en `tests/unit/`), y cambiar la base de datos solo tocaría la capa de repositories.
+Con esta separación, las reglas de negocio se testean sin MongoDB (ver `tests/unit/`), y cambiar la base de datos solo tocaría la capa de repositories.
 
 ## Constantes del dominio
 
@@ -115,6 +116,11 @@ Roles y estados se definen una sola vez en `src/constants/index.js`, congelados 
 |---|---|
 | `USER_ROLES` | `admin`, `user`, `driver` |
 | `PRODUCT_STATUS` | `available`, `out_of_stock` |
+| `ORDER_STATUS` | `created`, `assigned`, `picked_up`, `in_transit`, `delivered`, `cancelled` |
+| `ORDER_TRANSITIONS` | Mapa de transiciones válidas entre estados del pedido |
+| `DELIVERY_PRIORITY` | `low`, `normal`, `high` |
+| `DELIVERY_STATUS` | `pending`, `assigned`, `in_transit`, `delivered` |
+| `MAX_MOCK_ITEMS` | `100` (máximo de registros por pedido de mocks) |
 
 `src/utils/constants.js` re-exporta el mismo contenido (la consigna menciona las dos rutas).
 
@@ -143,6 +149,43 @@ Todas las respuestas exitosas tienen la forma `{ "status": "success", "payload":
 | POST | `/api/users` | `{"firstName": "Ana", "lastName": "Pérez", "email": "ana@test.com"}` | Crea un usuario con rol `user` por defecto (409 si el email ya existe) |
 | PUT | `/api/users/:uid` | `{"role": "driver"}` | Actualiza campos |
 | DELETE | `/api/users/:uid` | — | Elimina un usuario |
+
+
+### Mocks — `/api/mocks`
+
+Herramienta de desarrollo y testing para generar datos simulados con [`@faker-js/faker`](https://fakerjs.dev/) (en español). **No se monta en producción** (`NODE_ENV=production`). Cada endpoint responde también en un alias con el nombre usado en el temario del curso.
+
+**Datos simulados sin guardar** (`?qty=N`, entero entre 0 y 100, por defecto 5):
+
+| Método | Ruta | Alias | Qué genera |
+|---|---|---|---|
+| GET | `/api/mocks/users?qty=2` | `/api/mocks/mockingusers` | Usuarios con rol `user` o `driver` (~30% repartidores) |
+| GET | `/api/mocks/products?qty=3` | `/api/mocks/mockingproducts` | Productos con `status` coherente con el `stock` (~15% sin stock) |
+| GET | `/api/mocks/orders?qty=2` | `/api/mocks/mockingorders` | Pedidos con items que referencian productos, `total` calculado, estado `created` y prioridad aleatoria |
+
+**Carga de datos de prueba en MongoDB:**
+
+| Método | Ruta | Body | Respuesta (`payload`) |
+|---|---|---|---|
+| POST | `/api/mocks/seed?qty=10` | — | `{"insertados": 10, "coleccion": "users"}` |
+| POST | `/api/mocks/seed` (alias `/api/mocks/generateData`) | `{"users": 10, "products": 5, "orders": 8, "deliveries": 5}` | `{"insertados": {"users": 10, "products": 5, "orders": 8, "deliveries": 5}}` |
+
+El seed completo inserta en orden **usuarios → productos → pedidos → entregas**, usando los `_id` reales de cada paso, y respeta estas reglas:
+
+- Cada pedido pertenece a un usuario con rol `user` del mismo seed, y cada item referencia un producto insertado (con copia del nombre y precio).
+- Los primeros `deliveries` pedidos llevan entrega. Su estado (`assigned`, `picked_up`, `in_transit` o `delivered`) exige un repartidor con rol `driver`. Si el seed no tiene repartidores, quedan en `created` con la entrega `pending` y sin repartidor.
+- Los pedidos sin entrega quedan `created` o `cancelled`. Un pedido cancelado nunca tiene entrega.
+
+Casos inválidos (responden 400):
+
+| Body | Motivo |
+|---|---|
+| `{"users": "muchos"}` | No es un número entero |
+| `{"users": -1}` | Negativo |
+| `{"users": 500}` | Supera el máximo de 100 |
+| `{"users": 0, "orders": 0}` | Ninguna cantidad mayor a 0 |
+| `{"users": 5, "orders": 3}` | Pedidos sin productos en el mismo seed |
+| `{"users": 3, "products": 2, "orders": 2, "deliveries": 5}` | Más entregas que pedidos |
 
 ## Tests
 
