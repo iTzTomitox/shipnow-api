@@ -162,6 +162,7 @@ Herramienta de desarrollo y testing para generar datos simulados con [`@faker-js
 | GET | `/api/mocks/users?qty=2` | `/api/mocks/mockingusers` | Usuarios con rol `user` o `driver` (~30% repartidores) |
 | GET | `/api/mocks/products?qty=3` | `/api/mocks/mockingproducts` | Productos con `status` coherente con el `stock` (~15% sin stock) |
 | GET | `/api/mocks/orders?qty=2` | `/api/mocks/mockingorders` | Pedidos con items que referencian productos, `total` calculado, estado `created` y prioridad aleatoria |
+| GET | `/api/mocks/deliveries?qty=2` | `/api/mocks/mockingdeliveries` | Entregas asociadas a pedidos simulados: `pending` sin repartidor; `assigned`, `in_transit` o `delivered` con repartidor |
 
 **Carga de datos de prueba en MongoDB:**
 
@@ -194,6 +195,8 @@ npm test
 ```
 
 Tests unitarios con Mocha y Chai sobre la validación de configuración, las constantes y las reglas de negocio de los services. Los services se prueban inyectándoles un repository falso, así que **no requieren base de datos ni archivo `.env`**.
+
+> **Importante:** Mocha y Chai son `devDependencies`. Instalá con `npm install` (sin `--omit=dev` ni `NODE_ENV=production`); si no, `npm test` falla con `mocha: not found`.
 
 ## Notas
 
