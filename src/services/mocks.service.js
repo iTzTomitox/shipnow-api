@@ -74,6 +74,21 @@ export default class MocksService {
       generateMockOrder({ customerId: generateMockId(), products })
     )
   }
+  
+  getMockDeliveries(qty) {
+    const count = parseQty(qty, 'qty', { defaultValue: DEFAULT_QTY })
+    const products = withMockIds(generateMockProducts(PRODUCTS_FOR_MOCK_ORDERS))
+    return Array.from({ length: count }, () => {
+      // Pedido simulado en un estado que lleva entrega (CANCELLED no lleva)
+      const status = faker.helpers.arrayElement([ORDER_STATUS.CREATED, ...STATUSES_WITH_DRIVER])
+      const order = {
+        _id: generateMockId(),
+        ...generateMockOrder({ customerId: generateMockId(), products, status })
+      }
+      // El estado de la entrega y si lleva repartidor se derivan del pedido
+      return generateMockDelivery({ order, driverId: generateMockId() })
+    })
+  }
 
   async seedUsers(qty) {
     const count = parseQty(qty, 'qty')

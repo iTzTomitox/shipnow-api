@@ -64,6 +64,17 @@ describe('MocksService', () => {
         for (const item of order.items) expect(item.product).to.match(/^[0-9a-f]{24}$/)
       }
     })
+    it('getMockDeliveries genera entregas coherentes: PENDING sin repartidor, el resto con repartidor', () => {
+      const { service } = createService()
+      for (const delivery of service.getMockDeliveries(30)) {
+        expect(delivery.order).to.match(/^[0-9a-f]{24}$/)
+        if (delivery.status === DELIVERY_STATUS.PENDING) {
+          expect(delivery.driver).to.equal(null)
+        } else {
+          expect(delivery.driver).to.match(/^[0-9a-f]{24}$/)
+        }
+      }
+    })
   })
 
   describe('seedUsers (?qty=N)', () => {

@@ -3,6 +3,7 @@ import {
   getMockUsers,
   getMockProducts,
   getMockOrders,
+  getMockDeliveries,
   seedMocks
 } from '../controllers/mocks.controller.js'
 
@@ -16,6 +17,9 @@ router.get('/mockingproducts', getMockProducts)
 
 router.get('/orders', getMockOrders)
 router.get('/mockingorders', getMockOrders)
+
+router.get('/deliveries', getMockDeliveries)
+router.get('/mockingdeliveries', getMockDeliveries)
 
 router.post('/seed', seedMocks)
 router.post('/generateData', seedMocks)

@@ -23,6 +23,13 @@ export const getMockOrders = (req, res, next) => {
     next(error)
   }
 }
+export const getMockDeliveries = (req, res, next) => {
+  try {
+    res.status(200).json({ status: 'success', payload: mocksService.getMockDeliveries(req.query.qty) })
+  } catch (error) {
+    next(error)
+  }
+}
 
 export const seedMocks = async (req, res, next) => {
   try {
