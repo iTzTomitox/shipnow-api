@@ -45,7 +45,7 @@ describe('ProductsService', () => {
   describe('getById', () => {
     it('lanza 404 si el producto no existe', async () => {
       const error = await catchError(() => new ProductsService(createFakeRepo()).getById('x'))
-      expect(error.status).to.equal(404)
+      expect(error.code).to.equal('PRODUCT_NOT_FOUND')
     })
   })
 
@@ -74,18 +74,18 @@ describe('ProductsService', () => {
     it('rechaza price negativo con 400', async () => {
       const service = new ProductsService(createFakeRepo())
       const error = await catchError(() => service.create({ name: 'Caja', price: -1, stock: 1 }))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('VALIDATION_ERROR')
     })
 
     it('rechaza stock decimal con 400', async () => {
       const service = new ProductsService(createFakeRepo())
       const error = await catchError(() => service.create({ name: 'Caja', price: 10, stock: 1.5 }))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('VALIDATION_ERROR')
     })
 
     it('rechaza body vacío con 400', async () => {
       const error = await catchError(() => new ProductsService(createFakeRepo()).create(undefined))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('VALIDATION_ERROR')
     })
   })
 
@@ -99,20 +99,20 @@ describe('ProductsService', () => {
     it('rechaza un update sin campos válidos con 400', async () => {
       const service = new ProductsService(createFakeRepo())
       const error = await catchError(() => service.update('p1', { status: 'available' }))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('VALIDATION_ERROR')
     })
 
     it('lanza 404 si el producto a actualizar no existe', async () => {
       const repo = createFakeRepo({ updateById: async () => null })
       const error = await catchError(() => new ProductsService(repo).update('p1', { price: 5 }))
-      expect(error.status).to.equal(404)
+      expect(error.code).to.equal('PRODUCT_NOT_FOUND')
     })
   })
 
   describe('delete', () => {
     it('lanza 404 si el producto a borrar no existe', async () => {
       const error = await catchError(() => new ProductsService(createFakeRepo()).delete('x'))
-      expect(error.status).to.equal(404)
+      expect(error.code).to.equal('PRODUCT_NOT_FOUND')
     })
   })
 })

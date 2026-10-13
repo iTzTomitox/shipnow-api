@@ -1,5 +1,5 @@
 import { USER_ROLES } from '../constants/index.js'
-import { httpError } from '../utils/httpError.js'
+import AppError from '../errors/AppError.js'
 import { usersRepository } from '../repositories/users.repository.js'
 
 const VALID_ROLES = Object.values(USER_ROLES)
@@ -15,7 +15,7 @@ const validateUser = (data = {}, { partial = false } = {}) => {
   for (const field of ['firstName', 'lastName']) {
     if (!partial || data[field] !== undefined) {
       if (!isNonEmptyString(data[field])) {
-        throw httpError(400, `${field} es obligatorio y debe ser texto`)
+        throw new AppError('VALIDATION_ERROR', `${field} es obligatorio y debe ser texto`)
       }
       clean[field] = data[field].trim()
     }
@@ -23,7 +23,7 @@ const validateUser = (data = {}, { partial = false } = {}) => {
 
   if (!partial || data.email !== undefined) {
     if (typeof data.email !== 'string' || !EMAIL_REGEX.test(data.email.trim())) {
-      throw httpError(400, 'email es obligatorio y debe tener un formato válido')
+      throw new AppError('VALIDATION_ERROR', 'email es obligatorio y debe tener un formato válido')
     }
     clean.email = data.email.trim().toLowerCase()
   }
@@ -31,7 +31,7 @@ const validateUser = (data = {}, { partial = false } = {}) => {
   // role es opcional también al crear (por defecto USER)
   if (data.role !== undefined) {
     if (!VALID_ROLES.includes(data.role)) {
-      throw httpError(400, `role inválido. Valores permitidos: ${VALID_ROLES.join(', ')}`)
+      throw new AppError('INVALID_USER_ROLE', `Valores permitidos: ${VALID_ROLES.join(', ')}`)
     }
     clean.role = data.role
   }
@@ -47,44 +47,44 @@ export default class UsersService {
 
   async getAll({ role } = {}) {
     if (role !== undefined && !VALID_ROLES.includes(role)) {
-      throw httpError(400, `role inválido. Valores permitidos: ${VALID_ROLES.join(', ')}`)
+      throw new AppError('INVALID_USER_ROLE', `Valores permitidos: ${VALID_ROLES.join(', ')}`)
     }
     return this.repository.findAll({ role })
   }
 
   async getById(id) {
     const user = await this.repository.findById(id)
-    if (!user) throw httpError(404, 'Usuario no encontrado')
+    if (!user) throw new AppError('USER_NOT_FOUND')
     return user
   }
 
   async create(data) {
     const user = validateUser(data ?? {})
     const existing = await this.repository.findByEmail(user.email)
-    if (existing) throw httpError(409, 'Ya existe un usuario con ese email')
+    if (existing) throw new AppError('USER_ALREADY_EXISTS')
     return this.repository.create({ ...user, role: user.role ?? USER_ROLES.USER })
   }
 
   async update(id, data) {
     const changes = validateUser(data ?? {}, { partial: true })
     if (Object.keys(changes).length === 0) {
-      throw httpError(400, 'No hay campos válidos para actualizar (firstName, lastName, email, role)')
+      throw new AppError('VALIDATION_ERROR', 'No hay campos válidos para actualizar (firstName, lastName, email, role)')
     }
     // Conflicto solo si el email pertenece a OTRO usuario
     if (changes.email) {
       const existing = await this.repository.findByEmail(changes.email)
       if (existing && String(existing._id) !== String(id)) {
-        throw httpError(409, 'Ya existe un usuario con ese email')
+        throw new AppError('USER_ALREADY_EXISTS')
       }
     }
     const updated = await this.repository.updateById(id, changes)
-    if (!updated) throw httpError(404, 'Usuario no encontrado')
+    if (!updated) throw new AppError('USER_NOT_FOUND')
     return updated
   }
 
   async delete(id) {
     const deleted = await this.repository.deleteById(id)
-    if (!deleted) throw httpError(404, 'Usuario no encontrado')
+    if (!deleted) throw new AppError('USER_NOT_FOUND')
     return deleted
   }
 }

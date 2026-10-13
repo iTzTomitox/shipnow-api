@@ -53,7 +53,7 @@ describe('MocksService', () => {
       it(`rechaza qty inválido "${invalid}" con 400`, async () => {
         const { service } = createService()
         const error = await catchError(() => service.getMockUsers(invalid))
-        expect(error.status).to.equal(400)
+        expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
       })
     }
 
@@ -88,7 +88,7 @@ describe('MocksService', () => {
     it('rechaza qty 0 con 400', async () => {
       const { service } = createService()
       const error = await catchError(() => service.seedUsers('0'))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
     })
   })
 
@@ -96,20 +96,20 @@ describe('MocksService', () => {
     it('rechaza un body sin cantidades con 400', async () => {
       const { service } = createService()
       const error = await catchError(() => service.seed(undefined))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
     })
 
     it('rechaza orders sin users o products con 400', async () => {
       const { service } = createService()
       const error = await catchError(() => service.seed({ users: 5, orders: 3 }))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
     })
 
     it('rechaza más deliveries que orders con 400', async () => {
       const { service } = createService()
       const body = { users: 5, products: 3, orders: 2, deliveries: 3 }
       const error = await catchError(() => service.seed(body))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
     })
 
     it('inserta las cantidades pedidas y devuelve el resumen', async () => {
@@ -157,6 +157,13 @@ describe('MocksService', () => {
         expect(delivery.status).to.equal(DELIVERY_STATUS.PENDING)
         expect(delivery.driver).to.equal(null)
       }
+    })
+    it('si MongoDB falla durante la carga, responde MOCK_GENERATION_ERROR', async () => {
+      const { service, repos } = createService()
+      repos.productsRepository.insertMany = async () => { throw new Error('connection lost') }
+      const error = await catchError(() => service.seed({ users: 2, products: 2 }))
+      expect(error.code).to.equal('MOCK_GENERATION_ERROR')
+      expect(error.details).to.match(/connection lost/)
     })
   })
 })

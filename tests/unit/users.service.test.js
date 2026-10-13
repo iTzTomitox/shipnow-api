@@ -39,14 +39,14 @@ describe('UsersService', () => {
     it('rechaza un rol inválido en el filtro con 400', async () => {
       const service = new UsersService(createFakeRepo())
       const error = await catchError(() => service.getAll({ role: 'superadmin' }))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('INVALID_USER_ROLE')
     })
   })
 
   describe('getById', () => {
     it('lanza 404 si el usuario no existe', async () => {
       const error = await catchError(() => new UsersService(createFakeRepo()).getById('x'))
-      expect(error.status).to.equal(404)
+      expect(error.code).to.equal('USER_NOT_FOUND')
     })
   })
 
@@ -72,19 +72,19 @@ describe('UsersService', () => {
     it('rechaza email con formato inválido con 400', async () => {
       const service = new UsersService(createFakeRepo())
       const error = await catchError(() => service.create({ ...validUser, email: 'ana.com' }))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('VALIDATION_ERROR')
     })
 
     it('rechaza un rol inválido con 400', async () => {
       const service = new UsersService(createFakeRepo())
       const error = await catchError(() => service.create({ ...validUser, role: 'superadmin' }))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('INVALID_USER_ROLE')
     })
 
     it('rechaza email repetido con 409', async () => {
       const repo = createFakeRepo({ findByEmail: async () => ({ _id: 'otro' }) })
       const error = await catchError(() => new UsersService(repo).create(validUser))
-      expect(error.status).to.equal(409)
+      expect(error.code).to.equal('USER_ALREADY_EXISTS')
     })
   })
 
@@ -94,7 +94,7 @@ describe('UsersService', () => {
       const error = await catchError(() =>
         new UsersService(repo).update('u1', { email: 'ana@test.com' })
       )
-      expect(error.status).to.equal(409)
+      expect(error.code).to.equal('USER_ALREADY_EXISTS')
     })
 
     it('permite actualizar con su propio email', async () => {
@@ -106,20 +106,20 @@ describe('UsersService', () => {
     it('rechaza un update sin campos válidos con 400', async () => {
       const service = new UsersService(createFakeRepo())
       const error = await catchError(() => service.update('u1', { password: 'x' }))
-      expect(error.status).to.equal(400)
+      expect(error.code).to.equal('VALIDATION_ERROR')
     })
 
     it('lanza 404 si el usuario a actualizar no existe', async () => {
       const repo = createFakeRepo({ updateById: async () => null })
       const error = await catchError(() => new UsersService(repo).update('u1', { firstName: 'Eva' }))
-      expect(error.status).to.equal(404)
+      expect(error.code).to.equal('USER_NOT_FOUND')
     })
   })
 
   describe('delete', () => {
     it('lanza 404 si el usuario a borrar no existe', async () => {
       const error = await catchError(() => new UsersService(createFakeRepo()).delete('x'))
-      expect(error.status).to.equal(404)
+      expect(error.code).to.equal('USER_NOT_FOUND')
     })
   })
 })

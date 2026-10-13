@@ -1,6 +1,6 @@
 import { fakerES as faker } from '@faker-js/faker'
 import { USER_ROLES, ORDER_STATUS, MAX_MOCK_ITEMS } from '../constants/index.js'
-import { httpError } from '../utils/httpError.js'
+import AppError from '../errors/AppError.js'
 import { generateMockId } from '../mocks/id.mock.js'
 import { generateMockUsers } from '../mocks/users.mock.js'
 import { generateMockProducts } from '../mocks/products.mock.js'
@@ -29,7 +29,7 @@ const parseQty = (value, field, { defaultValue = 0 } = {}) => {
   const isNumberLike = typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')
   const qty = Number(value)
   if (!isNumberLike || !Number.isInteger(qty) || qty < 0 || qty > MAX_MOCK_ITEMS) {
-    throw httpError(400, `${field} debe ser un número entero entre 0 y ${MAX_MOCK_ITEMS}`)
+    throw new AppError('INVALID_MOCK_AMOUNT', `${field} debe ser un número entero entre 0 y ${MAX_MOCK_ITEMS}`)
   }
   return qty
 }
@@ -37,17 +37,26 @@ const parseQty = (value, field, { defaultValue = 0 } = {}) => {
 // Reglas de un seed completo: algo para generar y relaciones posibles
 const validateSeedCounts = ({ users, products, orders, deliveries }) => {
   if (users + products + orders + deliveries === 0) {
-    throw httpError(400, 'Indicá al menos una cantidad mayor a 0 (users, products, orders, deliveries)')
+    throw new AppError('INVALID_MOCK_AMOUNT', 'Indicá al menos una cantidad mayor a 0 (users, products, orders, deliveries)')
   }
   if (orders > 0 && (users === 0 || products === 0)) {
-    throw httpError(400, 'Para generar orders hacen falta users y products en el mismo seed')
+    throw new AppError('INVALID_MOCK_AMOUNT', 'Para generar orders hacen falta users y products en el mismo seed')
   }
   if (deliveries > orders) {
-    throw httpError(400, 'deliveries no puede superar a orders (cada entrega pertenece a un pedido)')
+    throw new AppError('INVALID_MOCK_AMOUNT', 'deliveries no puede superar a orders (cada entrega pertenece a un pedido)')
   }
 }
 
 const withMockIds = (items) => items.map((item) => ({ _id: generateMockId(), ...item }))
+
+// Inserta en bloque; si MongoDB falla, lo traduce a un error controlado de mocks
+const insertOrFail = async (repository, docs) => {
+  try {
+    return await repository.insertMany(docs)
+  } catch (error) {
+    throw new AppError('MOCK_GENERATION_ERROR', error.message)
+  }
+}
 
 export default class MocksService {
   // Inyección de dependencias: los cuatro repositories en un objeto con nombre
@@ -74,7 +83,7 @@ export default class MocksService {
       generateMockOrder({ customerId: generateMockId(), products })
     )
   }
-  
+
   getMockDeliveries(qty) {
     const count = parseQty(qty, 'qty', { defaultValue: DEFAULT_QTY })
     const products = withMockIds(generateMockProducts(PRODUCTS_FOR_MOCK_ORDERS))
@@ -92,8 +101,8 @@ export default class MocksService {
 
   async seedUsers(qty) {
     const count = parseQty(qty, 'qty')
-    if (count === 0) throw httpError(400, 'qty debe ser mayor a 0')
-    const inserted = await this.usersRepository.insertMany(generateMockUsers(count))
+    if (count === 0) throw new AppError('INVALID_MOCK_AMOUNT', 'qty debe ser mayor a 0')
+    const inserted = await insertOrFail(this.usersRepository,generateMockUsers(count))
     return { insertados: inserted.length, coleccion: 'users' }
   }
 
@@ -109,10 +118,10 @@ export default class MocksService {
     validateSeedCounts(counts)
 
     const users = counts.users > 0
-      ? await this.usersRepository.insertMany(generateMockUsers(counts.users))
+      ? await insertOrFail(this.usersRepository,generateMockUsers(counts.users))
       : []
     const products = counts.products > 0
-      ? await this.productsRepository.insertMany(generateMockProducts(counts.products))
+      ? await insertOrFail(this.productsRepository,generateMockProducts(counts.products))
       : []
 
     // Clientes = rol USER (si no hay, cualquiera); repartidores = rol DRIVER
@@ -132,7 +141,7 @@ export default class MocksService {
         status: faker.helpers.arrayElement(statusPool)
       })
     })
-    const orders = counts.orders > 0 ? await this.ordersRepository.insertMany(mockOrders) : []
+    const orders = counts.orders > 0 ? await insertOrFail(this.ordersRepository,mockOrders) : []
 
     const mockDeliveries = orders.slice(0, counts.deliveries).map((order) =>
       generateMockDelivery({
@@ -141,7 +150,7 @@ export default class MocksService {
       })
     )
     const deliveries = mockDeliveries.length > 0
-      ? await this.deliveriesRepository.insertMany(mockDeliveries)
+      ? await insertOrFail(this.deliveriesRepository,mockDeliveries)
       : []
 
     return {

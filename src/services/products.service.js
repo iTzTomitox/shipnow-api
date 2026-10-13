@@ -1,5 +1,5 @@
 import { PRODUCT_STATUS } from '../constants/index.js'
-import { httpError } from '../utils/httpError.js'
+import AppError from '../errors/AppError.js'
 import { productsRepository } from '../repositories/products.repository.js'
 
 // Regla de negocio: el estado depende del stock, nunca lo decide el cliente
@@ -13,21 +13,21 @@ const validateProduct = (data = {}, { partial = false } = {}) => {
 
   if (!partial || data.name !== undefined) {
     if (typeof data.name !== 'string' || !data.name.trim()) {
-      throw httpError(400, 'name es obligatorio y debe ser texto')
+      throw new AppError('VALIDATION_ERROR', 'name es obligatorio y debe ser texto')
     }
     clean.name = data.name.trim()
   }
 
   if (!partial || data.price !== undefined) {
     if (typeof data.price !== 'number' || !Number.isFinite(data.price) || data.price < 0) {
-      throw httpError(400, 'price debe ser un número mayor o igual a 0')
+      throw new AppError('VALIDATION_ERROR', 'price debe ser un número mayor o igual a 0')
     }
     clean.price = data.price
   }
 
   if (!partial || data.stock !== undefined) {
     if (!Number.isInteger(data.stock) || data.stock < 0) {
-      throw httpError(400, 'stock debe ser un entero mayor o igual a 0')
+      throw new AppError('VALIDATION_ERROR', 'stock debe ser un entero mayor o igual a 0')
     }
     clean.stock = data.stock
   }
@@ -48,7 +48,7 @@ export default class ProductsService {
 
   async getById(id) {
     const product = await this.repository.findById(id)
-    if (!product) throw httpError(404, 'Producto no encontrado')
+    if (!product) throw new AppError('PRODUCT_NOT_FOUND')
     return product
   }
 
@@ -60,19 +60,19 @@ export default class ProductsService {
   async update(id, data) {
     const changes = validateProduct(data ?? {}, { partial: true })
     if (Object.keys(changes).length === 0) {
-      throw httpError(400, 'No hay campos válidos para actualizar (name, price, stock)')
+      throw new AppError('VALIDATION_ERROR', 'No hay campos válidos para actualizar (name, price, stock)')
     }
     // Si cambia el stock, recalculamos el estado
     if (changes.stock !== undefined) changes.status = statusFromStock(changes.stock)
 
     const updated = await this.repository.updateById(id, changes)
-    if (!updated) throw httpError(404, 'Producto no encontrado')
+    if (!updated) throw new AppError('PRODUCT_NOT_FOUND')
     return updated
   }
 
   async delete(id) {
     const deleted = await this.repository.deleteById(id)
-    if (!deleted) throw httpError(404, 'Producto no encontrado')
+    if (!deleted) throw new AppError('PRODUCT_NOT_FOUND')
     return deleted
   }
 }
