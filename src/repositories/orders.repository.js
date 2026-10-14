@@ -51,6 +51,19 @@ export default class OrdersRepository {
       .findByIdAndUpdate(id, data, { returnDocument: 'after', runValidators: true, projection: PROJECTION })
       .lean()
   }
+  // Cambio de estado condicional: solo actualiza si el pedido sigue en `fromStatus`.
+  // Evita que dos requests simultáneas apliquen transiciones incompatibles.
+  async updateStatus(id, fromStatus, toStatus) {
+    if (!mongoose.isValidObjectId(id)) return null
+    return this.model
+      .findOneAndUpdate(
+        { _id: id, status: fromStatus },
+        { status: toStatus },
+        { returnDocument: 'after', projection: PROJECTION }
+      )
+      .populate('customer', CUSTOMER_FIELDS)
+      .lean()
+  }
 }
 
 // Instancia lista para usar (la clase sigue exportada para los tests)
