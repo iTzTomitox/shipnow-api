@@ -2,7 +2,7 @@
 
 API REST de logística para gestionar usuarios, productos, pedidos y entregas. Proyecto integrador de **Programación Backend III** (CoderHouse).
 
-**Estado actual:** Pre-entrega 2 — módulo de mocking y carga de datos de prueba.
+**Estado actual:** Pre-entrega 3 — manejo profesional y centralizado de errores.
 
 ## Tecnologías
 
@@ -63,6 +63,8 @@ src/
 ├── config/          # buildConfig (validación), env.config (único lector de process.env), db
 ├── constants/       # roles y estados del dominio (Object.freeze)
 ├── controllers/     # única puerta de entrada HTTP: req/res y status codes
+├── errors/          # AppError y diccionario de errores (código → HTTP + mensaje)
+├── middlewares/     # 404 de rutas inexistentes y middleware global de errores
 ├── mocks/           # generadores de datos simulados (funciones puras, sin base de datos)
 ├── models/          # esquemas de Mongoose, sin lógica
 ├── repositories/    # único lugar que conoce Mongoose/MongoDB
@@ -126,7 +128,7 @@ Roles y estados se definen una sola vez en `src/constants/index.js`, congelados 
 
 ## Endpoints
 
-Todas las respuestas exitosas tienen la forma `{ "status": "success", "payload": ... }` y los errores `{ "status": "error", "message": "..." }`.
+Todas las respuestas exitosas tienen la forma `{ "status": "success", "payload": ... }`. Los errores siguen el formato descrito en [Manejo de errores](#manejo-de-errores).
 
 ### Productos — `/api/products`
 
@@ -150,6 +152,27 @@ Todas las respuestas exitosas tienen la forma `{ "status": "success", "payload":
 | PUT | `/api/users/:uid` | `{"role": "driver"}` | Actualiza campos |
 | DELETE | `/api/users/:uid` | — | Elimina un usuario |
 
+### Pedidos — `/api/orders`
+
+| Método | Ruta | Body | Descripción |
+|---|---|---|---|
+| GET | `/api/orders` | — | Lista los pedidos, con los datos del cliente |
+| GET | `/api/orders?status=created` | — | Filtra por estado (400 `INVALID_ORDER_STATUS` si no existe) |
+| GET | `/api/orders/:oid` | — | Obtiene un pedido (404 `ORDER_NOT_FOUND`) |
+| POST | `/api/orders` | `{"customer": "ID_USUARIO", "items": [{"product": "ID_PRODUCTO", "quantity": 2}], "deliveryAddress": "Av. Siempre Viva 742", "priority": "high"}` | Crea un pedido (201) |
+| PATCH | `/api/orders/:oid/status` | `{"status": "assigned"}` | Cambia el estado respetando las transiciones válidas |
+
+Al crear un pedido, el cliente envía solo el id y la cantidad de cada producto. El service valida que el cliente exista y tenga rol `user`, y que cada producto exista y esté `available`. Copia el nombre y el precio de cada producto (snapshot), calcula el `total` y fija el estado `created`. `priority` es opcional (`low`, `normal` o `high`; por defecto `normal`).
+
+Transiciones de estado válidas:
+
+```
+created ──→ assigned ──→ picked_up ──→ in_transit ──→ delivered
+   │            │
+   └────────────┴──→ cancelled     (solo antes de que lo retiren)
+```
+
+`delivered` y `cancelled` son estados finales. El cambio de estado se escribe de forma condicional (`findOneAndUpdate` filtrando por el estado actual), así dos requests simultáneas no pueden aplicar transiciones incompatibles.
 
 ### Mocks — `/api/mocks`
 
@@ -177,7 +200,7 @@ El seed completo inserta en orden **usuarios → productos → pedidos → entre
 - Los primeros `deliveries` pedidos llevan entrega. Su estado (`assigned`, `picked_up`, `in_transit` o `delivered`) exige un repartidor con rol `driver`. Si el seed no tiene repartidores, quedan en `created` con la entrega `pending` y sin repartidor.
 - Los pedidos sin entrega quedan `created` o `cancelled`. Un pedido cancelado nunca tiene entrega.
 
-Casos inválidos (responden 400):
+Casos inválidos (todos responden 400 `INVALID_MOCK_AMOUNT`, con el motivo en `details`):
 
 | Body | Motivo |
 |---|---|
@@ -187,6 +210,81 @@ Casos inválidos (responden 400):
 | `{"users": 0, "orders": 0}` | Ninguna cantidad mayor a 0 |
 | `{"users": 5, "orders": 3}` | Pedidos sin productos en el mismo seed |
 | `{"users": 3, "products": 2, "orders": 2, "deliveries": 5}` | Más entregas que pedidos |
+
+## Manejo de errores
+
+Todos los errores salen de **un único lugar**: el middleware global `src/middlewares/errorHandler.middleware.js`. Los services detectan el problema y lanzan un `AppError` con un código del diccionario (`src/errors/errorDictionary.js`); los controllers lo derivan con `next(error)`; el middleware arma la respuesta. Ninguna ruta ni controller responde errores por su cuenta.
+
+### Estructura de la respuesta de error
+
+```json
+{
+  "status": "error",
+  "error": "ORDER_NOT_FOUND",
+  "message": "No se encontró el pedido solicitado",
+  "details": "información del caso concreto"
+}
+```
+
+| Campo | Contenido |
+|---|---|
+| `status` | Siempre `"error"` |
+| `error` | Código interno estable del diccionario (lo usan los tests y Swagger) |
+| `message` | Mensaje fijo asociado a ese código |
+| `details` | Detalle del caso concreto, como qué campo falló. **Solo fuera de producción**: con `NODE_ENV=production` se omite, y un error 500 nunca expone el error interno |
+
+### Diccionario de errores
+
+| Código | HTTP | Cuándo ocurre |
+|---|---|---|
+| `VALIDATION_ERROR` | 400 | Datos con formato inválido o faltantes |
+| `INVALID_JSON` | 400 | El body no es un JSON válido |
+| `INVALID_USER_ROLE` | 400 | Rol que no está en `USER_ROLES` |
+| `ORDER_ITEMS_REQUIRED` | 400 | Pedido sin items, o item sin `product` o con `quantity` < 1 |
+| `INVALID_ORDER_STATUS` | 400 | Estado de pedido inexistente (por ejemplo `on_the_way`) |
+| `INVALID_MOCK_AMOUNT` | 400 | Cantidad de mocks inválida, negativa, mayor a 100 o incoherente |
+| `ROUTE_NOT_FOUND` | 404 | La ruta no existe |
+| `USER_NOT_FOUND` | 404 | Usuario inexistente |
+| `PRODUCT_NOT_FOUND` | 404 | Producto inexistente |
+| `ORDER_NOT_FOUND` | 404 | Pedido inexistente |
+| `DELIVERY_NOT_FOUND` | 404 | Entrega inexistente |
+| `USER_ALREADY_EXISTS` | 409 | Email ya registrado |
+| `DUPLICATE_RESOURCE` | 409 | Índice único violado en MongoDB |
+| `PRODUCT_NOT_AVAILABLE` | 409 | Producto sin stock en un pedido |
+| `INVALID_STATUS_TRANSITION` | 409 | Cambio de estado no permitido desde el estado actual del pedido |
+| `MOCK_GENERATION_ERROR` | 500 | Falló la inserción de mocks en MongoDB |
+| `DATABASE_ERROR` | 500 | MongoDB inaccesible |
+| `INTERNAL_SERVER_ERROR` | 500 | Error inesperado |
+
+Los errores que no lanza la aplicación también se traducen al formato común: un JSON mal formado pasa a `INVALID_JSON`, una validación de Mongoose a `VALIDATION_ERROR`, un índice único violado (E11000) a `DUPLICATE_RESOURCE`, MongoDB caído a `DATABASE_ERROR` y cualquier otro a `INTERNAL_SERVER_ERROR`.
+
+
+### Cómo probar los casos inválidos
+
+Con el servidor levantado (`npm run dev`):
+
+| Método | Ruta | Body | Respuesta esperada |
+|---|---|---|---|
+| GET | `/api/noexiste` | — | 404 `ROUTE_NOT_FOUND` |
+| GET | `/api/products/123` | — | 404 `PRODUCT_NOT_FOUND` |
+| POST | `/api/products` | `{"name": "Caja", "price": -10, "stock": 1}` | 400 `VALIDATION_ERROR` |
+| GET | `/api/users?role=superadmin` | — | 400 `INVALID_USER_ROLE` |
+| POST | `/api/users` | `{"firstName": "Ana", "lastName": "Pérez", "email": "ana.com"}` | 400 `VALIDATION_ERROR` |
+| GET | `/api/orders/123` | — | 404 `ORDER_NOT_FOUND` |
+| POST | `/api/orders` | `{"customer": "ID_USUARIO", "items": [], "deliveryAddress": "Calle 1"}` | 400 `ORDER_ITEMS_REQUIRED` |
+| PATCH | `/api/orders/ID_PEDIDO/status` | `{"status": "on_the_way"}` | 400 `INVALID_ORDER_STATUS` |
+| PATCH | `/api/orders/ID_PEDIDO_CREATED/status` | `{"status": "delivered"}` | 409 `INVALID_STATUS_TRANSITION` |
+| GET | `/api/mocks/users?qty=muchos` | — | 400 `INVALID_MOCK_AMOUNT` |
+| GET | `/api/mocks/users?qty=-5` | — | 400 `INVALID_MOCK_AMOUNT` |
+| POST | `/api/mocks/seed` | `{"users": 3, "products": 2, "orders": 2, "deliveries": 5}` | 400 `INVALID_MOCK_AMOUNT` |
+
+JSON mal formado (desde la terminal, porque los clientes HTTP no dejan enviarlo):
+
+```bash
+curl -s -X POST http://localhost:3000/api/products -H "Content-Type: application/json" -d '{"name": '
+```
+
+Respuesta: 400 `INVALID_JSON`.
 
 ## Tests
 
@@ -201,7 +299,8 @@ Tests unitarios con Mocha y Chai sobre la validación de configuración, las con
 ## Notas
 
 - Los mensajes de `console` en `src/server.js` son temporales: se reemplazan por un logger con Winston en la pre-entrega 4.
-- El manejo de errores actual es básico; se reemplaza por errores personalizados y un middleware centralizado en la pre-entrega 3.
+- **Stock:** crear un pedido valida que cada producto exista y esté `available`, pero **no descuenta stock**. Es una decisión de diseño: descontarlo correctamente con varios items requiere operaciones atómicas por producto y devolverlo ante cancelaciones o fallas parciales, y ninguna consigna lo pide.
+- **Seed de mocks sin transacciones:** si MongoDB falla a mitad de un seed, lo ya insertado en pasos anteriores (por ejemplo, los usuarios) queda guardado. La API responde `MOCK_GENERATION_ERROR` con el motivo en `details`.
 
 ## Autor
 
