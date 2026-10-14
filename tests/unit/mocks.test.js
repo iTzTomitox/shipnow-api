@@ -1,7 +1,8 @@
 import { expect } from 'chai'
 import { generateMockUser, generateMockUsers } from '../../src/mocks/users.mock.js'
 import { generateMockProducts } from '../../src/mocks/products.mock.js'
-import { generateMockOrder, calculateOrderTotal } from '../../src/mocks/orders.mock.js'
+import { generateMockOrder } from '../../src/mocks/orders.mock.js'
+import { calculateOrderTotal } from '../../src/services/orders.service.js'
 import { generateMockDelivery } from '../../src/mocks/deliveries.mock.js'
 import {
   USER_ROLES,

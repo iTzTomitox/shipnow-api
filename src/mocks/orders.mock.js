@@ -1,8 +1,6 @@
 import { fakerES as faker } from '@faker-js/faker'
 import { ORDER_STATUS, DELIVERY_PRIORITY, PRODUCT_STATUS } from '../constants/index.js'
-
-export const calculateOrderTotal = (items) =>
-  items.reduce((acc, item) => acc + item.price * item.quantity, 0)
+import { calculateOrderTotal } from '../services/orders.service.js'
 
 export const generateMockOrder = ({ customerId, products, status = ORDER_STATUS.CREATED }) => {
   // Preferimos productos con stock; si no hay ninguno, usamos todos
