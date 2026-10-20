@@ -9,6 +9,7 @@ import AppError from '../errors/AppError.js'
 import { ordersRepository } from '../repositories/orders.repository.js'
 import { usersRepository } from '../repositories/users.repository.js'
 import { productsRepository } from '../repositories/products.repository.js'
+import { deliveriesRepository } from '../repositories/deliveries.repository.js'
 
 const VALID_STATUSES = Object.values(ORDER_STATUS)
 const VALID_PRIORITIES = Object.values(DELIVERY_PRIORITY)
@@ -57,10 +58,11 @@ const assertValidStatus = (status) => {
 }
 
 export default class OrdersService {
-  constructor({ ordersRepository, usersRepository, productsRepository }) {
+  constructor({ ordersRepository, usersRepository, productsRepository, deliveriesRepository }) {
     this.ordersRepository = ordersRepository
     this.usersRepository = usersRepository
     this.productsRepository = productsRepository
+        this.deliveriesRepository = deliveriesRepository
   }
 
   async getAll({ status } = {}) {
@@ -110,6 +112,11 @@ export default class OrdersService {
     assertValidStatus(newStatus) 
 
     const order = await this.getById(id) 
+    
+    // ASSIGNED solo se alcanza asignando repartidor: deja pedido y entrega coherentes
+    if (newStatus === ORDER_STATUS.ASSIGNED) {
+      throw new AppError('INVALID_STATUS_TRANSITION', 'Para pasar a assigned usá PATCH /api/deliveries/:did/assign')
+    }
 
     const allowed = ORDER_TRANSITIONS[order.status]
     if (!allowed.includes(newStatus)) {
@@ -123,11 +130,31 @@ export default class OrdersService {
     }
     return updated
   }
+
+  // Seguimiento del pedido: estado actual + entrega (si existe) con su repartidor
+  async getTracking(id) {
+    const order = await this.getById(id) // inexistente → ORDER_NOT_FOUND
+    const delivery = await this.deliveriesRepository.findByOrder(order._id)
+    return {
+      order: {
+        _id: order._id,
+        status: order.status,
+        priority: order.priority,
+        deliveryAddress: order.deliveryAddress,
+        total: order.total,
+        updatedAt: order.updatedAt
+      },
+      delivery: delivery
+        ? { _id: delivery._id, status: delivery.status, driver: delivery.driver, updatedAt: delivery.updatedAt }
+        : null
+    }
+  }
 }
 
 
 export const ordersService = new OrdersService({
   ordersRepository,
   usersRepository,
-  productsRepository
+  productsRepository,
+  deliveriesRepository
 })

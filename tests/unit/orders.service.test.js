@@ -13,7 +13,7 @@ const PRODUCTS = {
 }
 
 // orderStatus: estado del pedido "o1" guardado (para probar transiciones)
-const createService = ({ orderStatus = ORDER_STATUS.CREATED, updateStatusResult } = {}) => {
+const createService = ({ orderStatus = ORDER_STATUS.CREATED, updateStatusResult, delivery = null } = {}) => {
   const calls = {}
   const ordersRepository = {
     findAll: async (args) => { calls.findAll = args; return [] },
@@ -26,7 +26,8 @@ const createService = ({ orderStatus = ORDER_STATUS.CREATED, updateStatusResult 
   }
   const usersRepository = { findById: async (id) => USERS[id] ?? null }
   const productsRepository = { findById: async (id) => PRODUCTS[id] ?? null }
-  const service = new OrdersService({ ordersRepository, usersRepository, productsRepository })
+  const deliveriesRepository = { findByOrder: async () => delivery }
+  const service = new OrdersService({ ordersRepository, usersRepository, productsRepository, deliveriesRepository })
   return { service, calls }
 }
 
@@ -161,17 +162,47 @@ describe('OrdersService', () => {
       expect(error.details).to.match(/estado final/)
     })
 
+    
+    it('pasar a assigned por este endpoint → INVALID_STATUS_TRANSITION (se asigna con el repartidor)', async () => {
+      const { service, calls } = createService({ orderStatus: ORDER_STATUS.CREATED })
+      const error = await catchError(() => service.updateStatus('o1', ORDER_STATUS.ASSIGNED))
+      expect(error.code).to.equal('INVALID_STATUS_TRANSITION')
+      expect(calls.updateStatus).to.equal(undefined)
+    })
+
     it('transición válida: escribe condicionado al estado actual', async () => {
       const { service, calls } = createService({ orderStatus: ORDER_STATUS.CREATED })
-      const updated = await service.updateStatus('o1', ORDER_STATUS.ASSIGNED)
-      expect(calls.updateStatus).to.deep.equal({ id: 'o1', from: 'created', to: 'assigned' })
-      expect(updated.status).to.equal(ORDER_STATUS.ASSIGNED)
+      const updated = await service.updateStatus('o1', ORDER_STATUS.CANCELLED)
+      expect(calls.updateStatus).to.deep.equal({ id: 'o1', from: 'created', to: 'cancelled' })
+      expect(updated.status).to.equal(ORDER_STATUS.CANCELLED)
     })
 
     it('si otra request cambió el estado en el medio → INVALID_STATUS_TRANSITION', async () => {
       const { service } = createService({ orderStatus: ORDER_STATUS.CREATED, updateStatusResult: null })
-      const error = await catchError(() => service.updateStatus('o1', ORDER_STATUS.ASSIGNED))
+      const error = await catchError(() => service.updateStatus('o1', ORDER_STATUS.CANCELLED))
       expect(error.code).to.equal('INVALID_STATUS_TRANSITION')
+    })
+  })
+  
+  describe('getTracking', () => {
+    it('pedido inexistente → ORDER_NOT_FOUND', async () => {
+      const { service } = createService()
+      const error = await catchError(() => service.getTracking('nope'))
+      expect(error.code).to.equal('ORDER_NOT_FOUND')
+    })
+
+    it('pedido sin entrega → delivery null', async () => {
+      const { service } = createService()
+      const tracking = await service.getTracking('o1')
+      expect(tracking.order).to.include({ _id: 'o1', status: ORDER_STATUS.CREATED })
+      expect(tracking.delivery).to.equal(null)
+    })
+
+    it('pedido con entrega → incluye estado y repartidor', async () => {
+      const delivery = { _id: 'dlv1', status: 'assigned', driver: { _id: 'd1', firstName: 'Luis' }, updatedAt: 'x' }
+      const { service } = createService({ delivery })
+      const tracking = await service.getTracking('o1')
+      expect(tracking.delivery).to.deep.equal(delivery)
     })
   })
 

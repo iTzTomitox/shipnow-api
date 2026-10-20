@@ -37,3 +37,12 @@ export const updateOrderStatus = async (req, res, next) => {
     next(error)
   }
 }
+
+export const getOrderTracking = async (req, res, next) => {
+  try {
+    const tracking = await ordersService.getTracking(req.params.oid)
+    res.status(200).json({ status: 'success', payload: tracking })
+  } catch (error) {
+    next(error)
+  }
+}
