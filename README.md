@@ -294,7 +294,7 @@ npm test
 
 Tests unitarios con Mocha y Chai sobre la validación de configuración, las constantes y las reglas de negocio de los services. Los services se prueban inyectándoles un repository falso, así que **no requieren base de datos ni archivo `.env`**.
 
-> **Importante:** Mocha y Chai son `devDependencies`. Instalá con `npm install` (sin `--omit=dev` ni `NODE_ENV=production`); si no, `npm test` falla con `mocha: not found`.
+> **Nota:** Mocha y Chai son `devDependencies`. El script `pretest` ejecuta `npm install --include=dev` antes de cada `npm test`, así la suite corre aunque el proyecto se haya instalado con `--omit=dev` o `NODE_ENV=production`.
 
 ## Notas
 
