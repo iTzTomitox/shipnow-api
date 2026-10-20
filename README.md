@@ -160,7 +160,8 @@ Todas las respuestas exitosas tienen la forma `{ "status": "success", "payload":
 | GET | `/api/orders?status=created` | — | Filtra por estado (400 `INVALID_ORDER_STATUS` si no existe) |
 | GET | `/api/orders/:oid` | — | Obtiene un pedido (404 `ORDER_NOT_FOUND`) |
 | POST | `/api/orders` | `{"customer": "ID_USUARIO", "items": [{"product": "ID_PRODUCTO", "quantity": 2}], "deliveryAddress": "Av. Siempre Viva 742", "priority": "high"}` | Crea un pedido (201) |
-| PATCH | `/api/orders/:oid/status` | `{"status": "assigned"}` | Cambia el estado respetando las transiciones válidas |
+| PATCH | `/api/orders/:oid/status` | `{"status": "picked_up"}` | Cambia el estado respetando las transiciones válidas (`assigned` solo se alcanza asignando repartidor) |
+| GET | `/api/orders/:oid/tracking` | — | Seguimiento: estado del pedido + su entrega y repartidor (`delivery: null` si todavía no tiene) |
 
 Al crear un pedido, el cliente envía solo el id y la cantidad de cada producto. El service valida que el cliente exista y tenga rol `user`, y que cada producto exista y esté `available`. Copia el nombre y el precio de cada producto (snapshot), calcula el `total` y fija el estado `created`. `priority` es opcional (`low`, `normal` o `high`; por defecto `normal`).
 
@@ -173,6 +174,32 @@ created ──→ assigned ──→ picked_up ──→ in_transit ──→ de
 ```
 
 `delivered` y `cancelled` son estados finales. El cambio de estado se escribe de forma condicional (`findOneAndUpdate` filtrando por el estado actual), así dos requests simultáneas no pueden aplicar transiciones incompatibles.
+
+### Entregas — `/api/deliveries`
+
+| Método | Ruta | Body | Descripción |
+|---|---|---|---|
+| GET | `/api/deliveries` | — | Lista entregas, con el resumen del pedido y los datos del repartidor |
+| GET | `/api/deliveries?status=assigned&driver=ID_REPARTIDOR` | — | Filtra por estado y/o repartidor (400 `INVALID_DELIVERY_STATUS` si el estado no existe) |
+| GET | `/api/deliveries/:did` | — | Obtiene una entrega (404 `DELIVERY_NOT_FOUND`) |
+| POST | `/api/deliveries` | `{"order": "ID_PEDIDO"}` | Crea la entrega de un pedido `created`: nace `pending` y sin repartidor (201) |
+| PATCH | `/api/deliveries/:did/assign` | `{"driver": "ID_REPARTIDOR"}` | Asigna un repartidor: la entrega **y el pedido** pasan a `assigned` |
+
+Reglas:
+
+- Solo se crea la entrega de un pedido `created`, y un pedido tiene **una sola** entrega (409 `DELIVERY_ALREADY_EXISTS`).
+- Para asignar, la entrega tiene que estar `pending` (409 `DELIVERY_ALREADY_ASSIGNED`) y el usuario tiene que tener rol `driver` (400 `VALIDATION_ERROR`).
+- `assigned` significa "tiene repartidor", así que **solo** se alcanza por este endpoint. `PATCH /api/orders/:oid/status` con `{"status": "assigned"}` responde 409 `INVALID_STATUS_TRANSITION`. Los estados siguientes (`picked_up`, `in_transit`, `delivered`) se avanzan desde el pedido.
+
+Flujo completo de un envío:
+
+```
+POST /api/orders                      → pedido created
+POST /api/deliveries                  → entrega pending
+PATCH /api/deliveries/:did/assign     → entrega y pedido assigned
+PATCH /api/orders/:oid/status         → picked_up → in_transit → delivered
+GET /api/orders/:oid/tracking         → estado del pedido + entrega + repartidor en cualquier momento
+```
 
 ### Mocks — `/api/mocks`
 
@@ -242,6 +269,7 @@ Todos los errores salen de **un único lugar**: el middleware global `src/middle
 | `INVALID_USER_ROLE` | 400 | Rol que no está en `USER_ROLES` |
 | `ORDER_ITEMS_REQUIRED` | 400 | Pedido sin items, o item sin `product` o con `quantity` < 1 |
 | `INVALID_ORDER_STATUS` | 400 | Estado de pedido inexistente (por ejemplo `on_the_way`) |
+| `INVALID_DELIVERY_STATUS` | 400 | Estado de entrega inexistente en un filtro |
 | `INVALID_MOCK_AMOUNT` | 400 | Cantidad de mocks inválida, negativa, mayor a 100 o incoherente |
 | `ROUTE_NOT_FOUND` | 404 | La ruta no existe |
 | `USER_NOT_FOUND` | 404 | Usuario inexistente |
@@ -252,6 +280,9 @@ Todos los errores salen de **un único lugar**: el middleware global `src/middle
 | `DUPLICATE_RESOURCE` | 409 | Índice único violado en MongoDB |
 | `PRODUCT_NOT_AVAILABLE` | 409 | Producto sin stock en un pedido |
 | `INVALID_STATUS_TRANSITION` | 409 | Cambio de estado no permitido desde el estado actual del pedido |
+| `DELIVERY_ALREADY_EXISTS` | 409 | El pedido ya tiene una entrega |
+| `DELIVERY_ALREADY_ASSIGNED` | 409 | La entrega ya no está `pending` (ya tiene repartidor) |
+| `ORDER_NOT_DELIVERABLE` | 409 | El pedido no está `created` (por ejemplo, está cancelado o ya asignado) |
 | `MOCK_GENERATION_ERROR` | 500 | Falló la inserción de mocks en MongoDB |
 | `DATABASE_ERROR` | 500 | MongoDB inaccesible |
 | `INTERNAL_SERVER_ERROR` | 500 | Error inesperado |
@@ -301,6 +332,8 @@ Tests unitarios con Mocha y Chai sobre la validación de configuración, las con
 - Los mensajes de `console` en `src/server.js` son temporales: se reemplazan por un logger con Winston en la pre-entrega 4.
 - **Stock:** crear un pedido valida que cada producto exista y esté `available`, pero **no descuenta stock**. Es una decisión de diseño: descontarlo correctamente con varios items requiere operaciones atómicas por producto y devolverlo ante cancelaciones o fallas parciales, y ninguna consigna lo pide.
 - **Seed de mocks sin transacciones:** si MongoDB falla a mitad de un seed, lo ya insertado en pasos anteriores (por ejemplo, los usuarios) queda guardado. La API responde `MOCK_GENERATION_ERROR` con el motivo en `details`.
+- **Asignación de repartidor sin transacciones (compensación):** asignar escribe en dos colecciones. Primero el pedido pasa a `assigned` con una escritura condicional; si después falla la actualización de la entrega, el pedido vuelve a `created` (operación compensatoria). Así ninguna falla deja un pedido `assigned` sin repartidor.
+- **Cancelación con entrega pendiente:** cancelar un pedido `created` que ya tiene una entrega `pending` deja esa entrega sin efecto pero guardada. Sincronizar el estado de la entrega con los cambios posteriores del pedido queda fuera del alcance actual.
 
 ## Autor
 
