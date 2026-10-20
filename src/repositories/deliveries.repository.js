@@ -42,7 +42,7 @@ export default class DeliveriesRepository {
 
   async findByOrder(orderId) {
     if (!mongoose.isValidObjectId(orderId)) return null
-    return this.model.findOne({ order: orderId }, PROJECTION).lean()
+    return this.model.findOne({ order: orderId }, PROJECTION).populate('driver', DRIVER_FIELDS).lean()
   }
 
   async create(data) {
@@ -58,6 +58,20 @@ export default class DeliveriesRepository {
     if (!mongoose.isValidObjectId(id)) return null
     return this.model
       .findByIdAndUpdate(id, data, { returnDocument: 'after', runValidators: true, projection: PROJECTION })
+      .lean()
+  }
+  // Actualización condicional: solo si la entrega sigue en `expectedStatus`.
+  // Evita que dos requests asignen la misma entrega a la vez.
+  async updateIf(id, expectedStatus, changes) {
+    if (!mongoose.isValidObjectId(id)) return null
+    return this.model
+      .findOneAndUpdate(
+        { _id: id, status: expectedStatus },
+        changes,
+        { returnDocument: 'after', runValidators: true, projection: PROJECTION }
+      )
+      .populate('order', ORDER_FIELDS)
+      .populate('driver', DRIVER_FIELDS)
       .lean()
   }
 }

@@ -29,6 +29,13 @@ export const ERRORS = Object.freeze({
 
   // Entregas
   DELIVERY_NOT_FOUND: { statusCode: 404, message: 'No se encontró la entrega solicitada' },
+  INVALID_DELIVERY_STATUS: { statusCode: 400, message: 'El estado indicado no es válido para una entrega' },
+  DELIVERY_ALREADY_EXISTS: { statusCode: 409, message: 'El pedido ya tiene una entrega asociada' },
+  DELIVERY_ALREADY_ASSIGNED: { statusCode: 409, message: 'La entrega ya tiene un repartidor asignado' },
+  ORDER_NOT_DELIVERABLE: {
+    statusCode: 409,
+    message: 'El pedido no admite esta operación de entrega en su estado actual'
+  },
 
   // Mocks
   INVALID_MOCK_AMOUNT: {
