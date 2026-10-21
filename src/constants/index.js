@@ -44,3 +44,15 @@ export const DELIVERY_STATUS = Object.freeze({
 
 // Límite de registros por pedido de mocks (evita llenar la base por accidente)
 export const MAX_MOCK_ITEMS = 100
+
+
+// Niveles del logger. En Winston, MENOR número = MÁS importante:
+// con nivel mínimo "info" se registran fatal, error, warning e info.
+export const LOG_LEVELS = Object.freeze({
+  fatal: 0,
+  error: 1,
+  warning: 2,
+  info: 3,
+  http: 4,
+  debug: 5
+})
