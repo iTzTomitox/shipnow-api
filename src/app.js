@@ -6,6 +6,7 @@ import usersRouter from './routes/users.router.js'
 import ordersRouter from './routes/orders.router.js'
 import deliveriesRouter from './routes/deliveries.router.js'
 import mocksRouter from './routes/mocks.router.js'
+import loggerRouter from './routes/logger.router.js'
 import { requestLogger } from './middlewares/requestLogger.middleware.js'
 import { notFound } from './middlewares/notFound.middleware.js'
 import { createErrorHandler } from './middlewares/errorHandler.middleware.js'
@@ -21,6 +22,7 @@ app.use('/api/deliveries', deliveriesRouter)
 
 if (config.nodeEnv !== 'production') {
   app.use('/api/mocks', mocksRouter)
+  app.use('/api', loggerRouter) // GET /api/loggerTest (herramienta interna)
 }
 
 app.use(notFound)
