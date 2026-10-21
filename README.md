@@ -2,7 +2,7 @@
 
 API REST de logística para gestionar usuarios, productos, pedidos y entregas. Proyecto integrador de **Programación Backend III** (CoderHouse).
 
-**Estado actual:** Pre-entrega 3 — manejo profesional y centralizado de errores.
+**Estado actual:** Pre-entrega 4 — logging profesional con Winston y monitoreo básico.
 
 ## Tecnologías
 
@@ -11,6 +11,7 @@ API REST de logística para gestionar usuarios, productos, pedidos y entregas. P
 - MongoDB Atlas + Mongoose 9
 - dotenv
 - Mocha + Chai (tests)
+- Winston + winston-daily-rotate-file (logging)
 
 ## Instalación y ejecución local
 
@@ -47,8 +48,9 @@ npm test
 | `PORT` | Puerto del servidor | `3000` |
 | `MONGODB_URI` | URI de conexión a MongoDB (la de tu cluster de Atlas) | `mongodb+srv://<usuario>:<clave>@<cluster>/shipnow` |
 | `NODE_ENV` | Entorno de ejecución: `development`, `test` o `production` | `development` |
+| `LOG_LEVEL` | Nivel mínimo de logs (opcional): `fatal`, `error`, `warning`, `info`, `http` o `debug`. Por defecto `debug` fuera de producción e `info` en producción | `debug` |
 
-Las tres son obligatorias. La configuración se valida al arrancar (`src/config/buildConfig.js`): si falta alguna o tiene un valor inválido, la app **no arranca** y muestra un error descriptivo. Por ejemplo:
+`PORT`, `MONGODB_URI` y `NODE_ENV` son obligatorias; `LOG_LEVEL` es opcional.. La configuración se valida al arrancar (`src/config/buildConfig.js`): si falta alguna o tiene un valor inválido, la app **no arranca** y muestra un error descriptivo. Por ejemplo:
 
 ```
 Error: Faltan variables de entorno críticas: MONGODB_URI. Revisá tu archivo .env (el modelo está en .env.example)
@@ -60,7 +62,7 @@ Error: Faltan variables de entorno críticas: MONGODB_URI. Revisá tu archivo .e
 
 ```
 src/
-├── config/          # buildConfig (validación), env.config (único lector de process.env), db
+├── config/          # buildConfig (validación), env.config (único lector de process.env), db, logger
 ├── constants/       # roles y estados del dominio (Object.freeze)
 ├── controllers/     # única puerta de entrada HTTP: req/res y status codes
 ├── errors/          # AppError y diccionario de errores (código → HTTP + mensaje)
@@ -238,6 +240,12 @@ Casos inválidos (todos responden 400 `INVALID_MOCK_AMOUNT`, con el motivo en `d
 | `{"users": 5, "orders": 3}` | Pedidos sin productos en el mismo seed |
 | `{"users": 3, "products": 2, "orders": 2, "deliveries": 5}` | Más entregas que pedidos |
 
+### Logger — `/api/loggerTest`
+
+| Método | Ruta | Body | Descripción |
+|---|---|---|---|
+| GET | `/api/loggerTest` | — | Herramienta interna: genera un log en cada nivel (no se monta en producción). Ver [Logging](#logging) |
+
 ## Manejo de errores
 
 Todos los errores salen de **un único lugar**: el middleware global `src/middlewares/errorHandler.middleware.js`. Los services detectan el problema y lanzan un `AppError` con un código del diccionario (`src/errors/errorDictionary.js`); los controllers lo derivan con `next(error)`; el middleware arma la respuesta. Ninguna ruta ni controller responde errores por su cuenta.
@@ -317,6 +325,87 @@ curl -s -X POST http://localhost:3000/api/products -H "Content-Type: application
 
 Respuesta: 400 `INVALID_JSON`.
 
+## Logging
+
+Logger centralizado con [Winston](https://github.com/winstonjs/winston) y rotación diaria con [`winston-daily-rotate-file`](https://github.com/winstonjs/winston-daily-rotate-file). La configuración vive en un único módulo, `src/config/logger.js`, y el resto del proyecto importa la misma instancia. En `src/` no hay ningún `console.log`.
+
+### Niveles
+
+| Nivel | Prioridad | Uso en ShipNow |
+|---|---|---|
+| `fatal` | 0 | Fallas críticas: MongoDB no conecta al arrancar, promesas o excepciones sin capturar |
+| `error` | 1 | Errores inesperados del servidor (5xx), con el stack |
+| `warning` | 2 | Errores esperados (4xx: recurso inexistente, datos inválidos, transición inválida, mocks inválidos, ruta inexistente), pedido sin repartidor, compensaciones |
+| `info` | 3 | Arranque, conexión a MongoDB, pedido creado, cambio de estado, repartidor asignado, mocks generados |
+| `http` | 4 | Cada petición: método, ruta, status y duración |
+| `debug` | 5 | Detalle para desarrollo |
+
+En Winston, **menor número = más importante**, y el nivel mínimo incluye todos los de número menor o igual. Por eso `fatal` es 0. El ejemplo del material del curso numera los niveles al revés (`debug: 0 ... fatal: 5`); con esa tabla, el archivo de errores recibiría todos los niveles salvo `fatal`, y no se cumpliría que `error.log` contenga solo `error` y `fatal`.
+
+### Comportamiento según el entorno
+
+| Entorno | Nivel mínimo | Consola | `error.log` | `combined.log` |
+|---|---|---|---|---|
+| `development` | `debug` | Sí, con colores | `error` y `fatal` | `info` en adelante |
+| `production` | `info` | No | `error` y `fatal` | `info` en adelante |
+| `test` | — | No (silencioso) | No | No |
+
+El nivel mínimo se puede cambiar con la variable opcional `LOG_LEVEL`.
+
+Formato de cada línea:
+
+```
+2026-10-20 23:55:13 [info] Pedido creado 6ad8... {"customer":"6ace...","items":1,"total":200}
+2026-10-20 23:55:13 [warning] Pedido 6ad8... sin repartidor asignado (entrega 6ad8... en pending)
+2026-10-20 23:55:14 [warning] ORDER_NOT_FOUND en GET /api/orders/123
+```
+
+### Dónde se guardan los logs y rotación
+
+```
+logs/
+├── 2026-10-20/
+│   ├── error.log       ← solo error y fatal
+│   └── combined.log    ← info, warning, error y fatal
+├── 2026-10-21/
+│   └── ...
+├── .audit-error.json   ← registro interno de la rotación
+└── .audit-combined.json
+```
+
+Se crea una carpeta por día y se conservan **14 días** de historial: los archivos más viejos se borran automáticamente, así los logs no crecen sin control.
+
+**La carpeta `logs/` está en `.gitignore`** (junto con `*.log`): los logs son archivos generados por la aplicación y pueden contener información interna, así que nunca se suben al repositorio.
+
+### Integración con el manejo de errores
+
+El middleware global de errores registra cada error antes de responder: los esperados (4xx) como `warning`, con el código, la ruta y el `details`; los inesperados (5xx) como `error`, con el mensaje original y el stack. El logger complementa la respuesta, no la reemplaza: el cliente sigue recibiendo el formato de error de siempre, y el stack nunca viaja en la respuesta.
+
+Una sola falla no pasa por el logger: si falta una variable de entorno, la app se detiene **al cargar la configuración**, antes de que el logger exista (el logger necesita la configuración para saber dónde escribir). Ese error se muestra por la salida estándar con su mensaje descriptivo.
+
+### Probar el logger
+
+`GET /api/loggerTest` genera un log de prueba en cada nivel. **Es una herramienta interna de validación, no una funcionalidad de negocio**, y no se monta en producción (responde 404 con `NODE_ENV=production`).
+
+```bash
+curl http://localhost:3000/api/loggerTest
+```
+
+Respuesta:
+
+```json
+{"status": "success", "payload": {"message": "Logs de prueba generados en todos los niveles", "levels": ["fatal", "error", "warning", "info", "http", "debug"]}}
+```
+
+Resultado esperado:
+
+| Destino | Qué aparece |
+|---|---|
+| Consola (desarrollo) | Los 6 niveles |
+| `logs/<fecha>/combined.log` | `fatal`, `error`, `warning` e `info` |
+| `logs/<fecha>/error.log` | Solo `fatal` y `error` |
+
+
 ## Tests
 
 ```bash
@@ -327,9 +416,10 @@ Tests unitarios con Mocha y Chai sobre la validación de configuración, las con
 
 > **Nota:** Mocha y Chai son `devDependencies`. El script `pretest` ejecuta `npm install --include=dev` antes de cada `npm test`, así la suite corre aunque el proyecto se haya instalado con `--omit=dev` o `NODE_ENV=production`.
 
+**Entorno de testing aislado:** `.mocharc.json` carga `tests/setup.js` antes de la suite. Ese archivo fija `NODE_ENV=test` y una URI local de test **antes** de que la app lea el `.env` (dotenv no pisa variables ya definidas), así los tests nunca usan la base de desarrollo. En `test` el logger es silencioso y no crea archivos.
+
 ## Notas
 
-- Los mensajes de `console` en `src/server.js` son temporales: se reemplazan por un logger con Winston en la pre-entrega 4.
 - **Stock:** crear un pedido valida que cada producto exista y esté `available`, pero **no descuenta stock**. Es una decisión de diseño: descontarlo correctamente con varios items requiere operaciones atómicas por producto y devolverlo ante cancelaciones o fallas parciales, y ninguna consigna lo pide.
 - **Seed de mocks sin transacciones:** si MongoDB falla a mitad de un seed, lo ya insertado en pasos anteriores (por ejemplo, los usuarios) queda guardado. La API responde `MOCK_GENERATION_ERROR` con el motivo en `details`.
 - **Asignación de repartidor sin transacciones (compensación):** asignar escribe en dos colecciones. Primero el pedido pasa a `assigned` con una escritura condicional; si después falla la actualización de la entrega, el pedido vuelve a `created` (operación compensatoria). Así ninguna falla deja un pedido `assigned` sin repartidor.
