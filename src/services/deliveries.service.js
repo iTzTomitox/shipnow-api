@@ -3,6 +3,7 @@ import AppError from '../errors/AppError.js'
 import { deliveriesRepository } from '../repositories/deliveries.repository.js'
 import { ordersRepository } from '../repositories/orders.repository.js'
 import { usersRepository } from '../repositories/users.repository.js'
+import logger from '../config/logger.js'
 
 const VALID_STATUSES = Object.values(DELIVERY_STATUS)
 
@@ -45,11 +46,14 @@ export default class DeliveriesService {
     const existing = await this.deliveriesRepository.findByOrder(orderId)
     if (existing) throw new AppError('DELIVERY_ALREADY_EXISTS')
 
-    return this.deliveriesRepository.create({
+    const created = await this.deliveriesRepository.create({
       order: order._id,
       driver: null,
       status: DELIVERY_STATUS.PENDING
+      
     })
+    logger.warning(`Pedido ${order._id} sin repartidor asignado (entrega ${created._id} en pending)`)
+    return created
   }
 
     // Asigna repartidor: pedido CREATED → ASSIGNED y entrega PENDING → ASSIGNED
@@ -86,14 +90,17 @@ export default class DeliveriesService {
         status: DELIVERY_STATUS.ASSIGNED
       })
     } catch (error) {
+      logger.warning(`Compensación: falló la asignación de la entrega ${id}; el pedido ${orderId} vuelve a created`)
       await rollbackOrder()
       throw error // el middleware lo traduce (ej.: DATABASE_ERROR)
     }
 
     if (!updated) {
+      logger.warning(`Compensación: la entrega ${id} ya estaba asignada; el pedido ${orderId} vuelve a created`)
       await rollbackOrder() // otra request asignó la entrega en el medio
       throw new AppError('DELIVERY_ALREADY_ASSIGNED')
     }
+    logger.info(`Repartidor ${driver._id} asignado a la entrega ${id} (pedido ${orderId} → assigned)`)
     return updated
   }
 }

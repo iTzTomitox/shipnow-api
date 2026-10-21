@@ -10,6 +10,7 @@ import { usersRepository } from '../repositories/users.repository.js'
 import { productsRepository } from '../repositories/products.repository.js'
 import { ordersRepository } from '../repositories/orders.repository.js'
 import { deliveriesRepository } from '../repositories/deliveries.repository.js'
+import logger from '../config/logger.js'
 
 const DEFAULT_QTY = 5 // cantidad por defecto en los GET sin ?qty
 const PRODUCTS_FOR_MOCK_ORDERS = 5 // catálogo simulado para GET de pedidos
@@ -103,6 +104,7 @@ export default class MocksService {
     const count = parseQty(qty, 'qty')
     if (count === 0) throw new AppError('INVALID_MOCK_AMOUNT', 'qty debe ser mayor a 0')
     const inserted = await insertOrFail(this.usersRepository,generateMockUsers(count))
+    logger.info(`Datos de prueba generados: ${inserted.length} users`)
     return { insertados: inserted.length, coleccion: 'users' }
   }
 
@@ -152,6 +154,13 @@ export default class MocksService {
     const deliveries = mockDeliveries.length > 0
       ? await insertOrFail(this.deliveriesRepository,mockDeliveries)
       : []
+
+      logger.info('Datos de prueba generados', {
+      users: users.length,
+      products: products.length,
+      orders: orders.length,
+      deliveries: deliveries.length
+    })
 
     return {
       insertados: {

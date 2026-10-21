@@ -10,6 +10,7 @@ import { ordersRepository } from '../repositories/orders.repository.js'
 import { usersRepository } from '../repositories/users.repository.js'
 import { productsRepository } from '../repositories/products.repository.js'
 import { deliveriesRepository } from '../repositories/deliveries.repository.js'
+import logger from '../config/logger.js'
 
 const VALID_STATUSES = Object.values(ORDER_STATUS)
 const VALID_PRIORITIES = Object.values(DELIVERY_PRIORITY)
@@ -98,7 +99,7 @@ export default class OrdersService {
       return { product: product._id, name: product.name, quantity: item.quantity, price: product.price }
     })
 
-    return this.ordersRepository.create({
+    const created = await this.ordersRepository.create({
       customer: customer._id,
       items,
       deliveryAddress: input.deliveryAddress,
@@ -106,6 +107,12 @@ export default class OrdersService {
       total: calculateOrderTotal(items),
       status: ORDER_STATUS.CREATED 
     })
+        logger.info(`Pedido creado ${created._id}`, {
+      customer: String(customer._id),
+      items: items.length,
+      total: created.total
+    })
+    return created
   }
 
   async updateStatus(id, newStatus) {
@@ -128,6 +135,7 @@ export default class OrdersService {
     if (!updated) {
       throw new AppError('INVALID_STATUS_TRANSITION', 'El estado del pedido cambió mientras se procesaba la solicitud')
     }
+    logger.info(`Pedido ${id}: ${order.status} → ${newStatus}`)
     return updated
   }
 
