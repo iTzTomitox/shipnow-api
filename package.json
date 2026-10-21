@@ -8,7 +8,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "pretest": "npm install --include=dev --no-audit --no-fund",
-    "test": "mocha \"tests/**/*.test.js\""
+    "test": "mocha"
   },
   "keywords": [],
   "author": "",
@@ -17,7 +17,9 @@
     "@faker-js/faker": "^10.6.0",
     "dotenv": "^18.0.5",
     "express": "^5.2.1",
-    "mongoose": "^9.10.4"
+    "mongoose": "^9.10.4",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0"
   },
   "devDependencies": {
     "chai": "^6.3.0",
