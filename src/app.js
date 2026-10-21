@@ -1,5 +1,6 @@
 import express from 'express'
 import config from './config/index.js'
+import logger from './config/logger.js'
 import productsRouter from './routes/products.router.js'
 import usersRouter from './routes/users.router.js'
 import ordersRouter from './routes/orders.router.js'
@@ -24,6 +25,6 @@ if (config.nodeEnv !== 'production') {
 
 app.use(notFound)
 
-app.use(createErrorHandler({ exposeDetails: config.nodeEnv !== 'production' }))
+app.use(createErrorHandler({ exposeDetails: config.nodeEnv !== 'production', logger }))
 
 export default app

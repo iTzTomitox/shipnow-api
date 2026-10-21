@@ -10,12 +10,22 @@ const createFakeRes = () => ({
   json(body) { this.body = body; return this }
 })
 
-const devHandler = createErrorHandler({ exposeDetails: true })
-const prodHandler = createErrorHandler({ exposeDetails: false })
+// logger falso: anota cada llamada con su nivel para poder inspeccionarla
+const createFakeLogger = () => {
+  const calls = []
+  const record = (level) => (message, meta) => calls.push({ level, message, meta })
+  return { calls, warning: record('warning'), error: record('error') }
+}
+
+const devHandler = createErrorHandler({ exposeDetails: true, logger: createFakeLogger() })
+const prodHandler = createErrorHandler({ exposeDetails: false, logger: createFakeLogger() })
+
+// req mínimo: el middleware usa method y originalUrl para el log
+const fakeReq = { method: 'GET', originalUrl: '/api/test' }
 
 const run = (handler, err) => {
   const res = createFakeRes()
-  handler(err, {}, res, () => {})
+  handler(err, fakeReq, res, () => {})
   return res
 }
 
@@ -66,6 +76,23 @@ describe('middlewares', () => {
       const res = run(devHandler, err)
       expect(res.statusCode).to.equal(500)
       expect(res.body.error).to.equal('DATABASE_ERROR')
+    })
+    
+    it('registra los errores esperados (4xx) como warning, con details', () => {
+      const logger = createFakeLogger()
+      run(createErrorHandler({ exposeDetails: true, logger }), new AppError('ORDER_NOT_FOUND', 'id 123'))
+      expect(logger.calls).to.have.lengthOf(1)
+      expect(logger.calls[0].level).to.equal('warning')
+      expect(logger.calls[0].message).to.equal('ORDER_NOT_FOUND en GET /api/test')
+      expect(logger.calls[0].meta).to.deep.equal({ details: 'id 123' })
+    })
+
+    it('registra los errores inesperados (5xx) como error, con el stack', () => {
+      const logger = createFakeLogger()
+      run(createErrorHandler({ exposeDetails: false, logger }), new TypeError('x is undefined'))
+      expect(logger.calls[0].level).to.equal('error')
+      expect(logger.calls[0].message).to.match(/INTERNAL_SERVER_ERROR en GET \/api\/test: x is undefined/)
+      expect(logger.calls[0].message).to.include('TypeError') // el stack viaja en el log
     })
   })
 
