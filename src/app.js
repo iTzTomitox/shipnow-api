@@ -7,6 +7,8 @@ import ordersRouter from './routes/orders.router.js'
 import deliveriesRouter from './routes/deliveries.router.js'
 import mocksRouter from './routes/mocks.router.js'
 import loggerRouter from './routes/logger.router.js'
+import swaggerUi from 'swagger-ui-express'
+import { swaggerSpecs } from './docs/swagger.config.js'
 import { requestLogger } from './middlewares/requestLogger.middleware.js'
 import { notFound } from './middlewares/notFound.middleware.js'
 import { createErrorHandler } from './middlewares/errorHandler.middleware.js'
@@ -21,6 +23,8 @@ app.use('/api/users', usersRouter)
 app.use('/api/deliveries', deliveriesRouter)
 
 if (config.nodeEnv !== 'production') {
+  app.get('/api/docs.json', (req, res) => res.json(swaggerSpecs)) // especificación cruda
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs))
   app.use('/api/mocks', mocksRouter)
   app.use('/api', loggerRouter) // GET /api/loggerTest (herramienta interna)
 }
