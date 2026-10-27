@@ -32,4 +32,19 @@ const swaggerOptions = {
   apis: [`${docsDir}/*.yaml`]
 }
 
-export const swaggerSpecs = swaggerJSDoc(swaggerOptions)
+// Herramientas internas: en producción no se montan, así que tampoco se documentan
+const INTERNAL_TAGS = ['Mocks', 'Logger']
+
+const buildSpecs = () => {
+  const specs = swaggerJSDoc(swaggerOptions)
+  if (config.nodeEnv !== 'production') return specs
+
+  for (const [route, item] of Object.entries(specs.paths)) {
+    const isInternal = Object.values(item).some((op) => op.tags?.some((tag) => INTERNAL_TAGS.includes(tag)))
+    if (isInternal) delete specs.paths[route]
+  }
+  specs.tags = specs.tags.filter((tag) => !INTERNAL_TAGS.includes(tag.name))
+  return specs
+}
+
+export const swaggerSpecs = buildSpecs()
