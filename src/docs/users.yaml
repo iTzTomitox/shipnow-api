@@ -1,0 +1,193 @@
+paths:
+  /api/users:
+    get:
+      tags: [Users]
+      summary: Listar usuarios
+      parameters:
+        - name: role
+          in: query
+          required: false
+          description: Filtra por rol (por ejemplo driver para listar repartidores)
+          schema:
+            $ref: '#/components/schemas/UserRole'
+      responses:
+        '200':
+          description: Lista de usuarios, los más nuevos primero
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/User'
+        '400':
+          description: Rol inválido en el filtro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INVALID_USER_ROLE:
+                  $ref: '#/components/examples/InvalidUserRole'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [Users]
+      summary: Crear un usuario
+      description: El rol por defecto es user. El email se normaliza a minúsculas y debe ser único.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserInput'
+      responses:
+        '201':
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/User'
+        '400':
+          description: Datos inválidos, rol inexistente o JSON mal formado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  $ref: '#/components/examples/ValidationError'
+                INVALID_USER_ROLE:
+                  $ref: '#/components/examples/InvalidUserRole'
+                INVALID_JSON:
+                  $ref: '#/components/examples/InvalidJson'
+        '409':
+          description: El email ya está registrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                USER_ALREADY_EXISTS:
+                  $ref: '#/components/examples/UserAlreadyExists'
+                DUPLICATE_RESOURCE:
+                  $ref: '#/components/examples/DuplicateResource'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/{uid}:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    get:
+      tags: [Users]
+      summary: Obtener un usuario
+      responses:
+        '200':
+          description: Usuario encontrado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/User'
+        '404':
+          description: El usuario no existe (o el id no tiene formato válido)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                USER_NOT_FOUND:
+                  $ref: '#/components/examples/UserNotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      tags: [Users]
+      summary: Actualizar un usuario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdate'
+      responses:
+        '200':
+          description: Usuario actualizado
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/User'
+        '400':
+          description: Datos inválidos, rol inexistente o ningún campo válido para actualizar
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  $ref: '#/components/examples/ValidationError'
+                INVALID_USER_ROLE:
+                  $ref: '#/components/examples/InvalidUserRole'
+        '404':
+          description: El usuario no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                USER_NOT_FOUND:
+                  $ref: '#/components/examples/UserNotFound'
+        '409':
+          description: El email pertenece a otro usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                USER_ALREADY_EXISTS:
+                  $ref: '#/components/examples/UserAlreadyExists'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [Users]
+      summary: Eliminar un usuario
+      responses:
+        '200':
+          description: Usuario eliminado (devuelve el usuario borrado)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/User'
+        '404':
+          description: El usuario no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                USER_NOT_FOUND:
+                  $ref: '#/components/examples/UserNotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'

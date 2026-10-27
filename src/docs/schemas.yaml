@@ -1,0 +1,744 @@
+components:
+  parameters:
+    UserId:
+      name: uid
+      in: path
+      required: true
+      description: Id del usuario (ObjectId de 24 caracteres hexadecimales)
+      schema:
+        type: string
+        example: 6ace2fddd86389ce141632a7
+    ProductId:
+      name: pid
+      in: path
+      required: true
+      description: Id del producto (ObjectId)
+      schema:
+        type: string
+        example: 6ace2fbed86389ce141632a6
+    OrderId:
+      name: oid
+      in: path
+      required: true
+      description: Id del pedido (ObjectId)
+      schema:
+        type: string
+        example: 6ad7f78b47d53c22208458f8
+    DeliveryId:
+      name: did
+      in: path
+      required: true
+      description: Id de la entrega (ObjectId)
+      schema:
+        type: string
+        example: 6ad7f78c47d53c22208458f9
+    MockQty:
+      name: qty
+      in: query
+      required: false
+      description: Cantidad de registros a generar (entero entre 0 y 100, por defecto 5)
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
+        default: 5
+
+  schemas:
+    # ---------- Respuestas genéricas ----------
+    SuccessResponse:
+      type: object
+      description: Forma de toda respuesta exitosa
+      required: [status, payload]
+      properties:
+        status:
+          type: string
+          enum: [success]
+        payload:
+          description: Datos de la respuesta (objeto o lista, según el endpoint)
+
+    ErrorResponse:
+      type: object
+      description: Forma de toda respuesta de error (la arma el middleware global)
+      required: [status, error, message]
+      properties:
+        status:
+          type: string
+          enum: [error]
+        error:
+          type: string
+          description: Código interno estable del diccionario de errores
+          enum:
+            - VALIDATION_ERROR
+            - INVALID_JSON
+            - DUPLICATE_RESOURCE
+            - ROUTE_NOT_FOUND
+            - USER_NOT_FOUND
+            - USER_ALREADY_EXISTS
+            - INVALID_USER_ROLE
+            - PRODUCT_NOT_FOUND
+            - PRODUCT_NOT_AVAILABLE
+            - ORDER_NOT_FOUND
+            - ORDER_ITEMS_REQUIRED
+            - INVALID_ORDER_STATUS
+            - INVALID_STATUS_TRANSITION
+            - DELIVERY_NOT_FOUND
+            - INVALID_DELIVERY_STATUS
+            - DELIVERY_ALREADY_EXISTS
+            - DELIVERY_ALREADY_ASSIGNED
+            - ORDER_NOT_DELIVERABLE
+            - INVALID_MOCK_AMOUNT
+            - MOCK_GENERATION_ERROR
+            - DATABASE_ERROR
+            - INTERNAL_SERVER_ERROR
+        message:
+          type: string
+          description: Mensaje fijo asociado al código
+        details:
+          type: string
+          description: Detalle del caso concreto. Solo fuera de producción.
+
+    ObjectId:
+      type: string
+      pattern: '^[0-9a-f]{24}$'
+      example: 6ace2fddd86389ce141632a7
+
+    Timestamps:
+      type: object
+      properties:
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # ---------- Usuarios ----------
+    UserRole:
+      type: string
+      enum: [admin, user, driver]
+
+    User:
+      allOf:
+        - type: object
+          required: [_id, firstName, lastName, email, role]
+          properties:
+            _id:
+              $ref: '#/components/schemas/ObjectId'
+            firstName:
+              type: string
+              example: Ana
+            lastName:
+              type: string
+              example: Pérez
+            email:
+              type: string
+              format: email
+              example: ana@test.com
+            role:
+              $ref: '#/components/schemas/UserRole'
+        - $ref: '#/components/schemas/Timestamps'
+
+    UserInput:
+      type: object
+      required: [firstName, lastName, email]
+      description: Solo se guardan estos campos; el resto del body se descarta
+      properties:
+        firstName:
+          type: string
+          example: Ana
+        lastName:
+          type: string
+          example: Pérez
+        email:
+          type: string
+          format: email
+          description: Se guarda en minúsculas y sin espacios. Debe ser único.
+          example: ana@test.com
+        role:
+          allOf:
+            - $ref: '#/components/schemas/UserRole'
+          description: Opcional, por defecto user
+
+    UserUpdate:
+      type: object
+      description: Al menos un campo. El email no puede pertenecer a otro usuario.
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          $ref: '#/components/schemas/UserRole'
+      example:
+        role: driver
+
+    PersonSummary:
+      type: object
+      description: Datos del cliente o repartidor incluidos en pedidos y entregas
+      properties:
+        _id:
+          $ref: '#/components/schemas/ObjectId'
+        firstName:
+          type: string
+          example: José
+        lastName:
+          type: string
+          example: Tirado Irizarry
+        email:
+          type: string
+          example: jose.tiradoirizarry89.fufvr@shipnow.test
+
+    # ---------- Productos ----------
+    ProductStatus:
+      type: string
+      enum: [available, out_of_stock]
+      description: Lo calcula el servidor a partir del stock (0 = out_of_stock)
+
+    Product:
+      allOf:
+        - type: object
+          required: [_id, name, price, stock, status]
+          properties:
+            _id:
+              $ref: '#/components/schemas/ObjectId'
+            name:
+              type: string
+              example: Caja chica
+            price:
+              type: number
+              minimum: 0
+              example: 1500
+            stock:
+              type: integer
+              minimum: 0
+              example: 10
+            status:
+              $ref: '#/components/schemas/ProductStatus'
+        - $ref: '#/components/schemas/Timestamps'
+
+    ProductInput:
+      type: object
+      required: [name, price, stock]
+      description: El status no se envía, lo calcula el servidor
+      properties:
+        name:
+          type: string
+          example: Caja chica
+        price:
+          type: number
+          minimum: 0
+          example: 1500
+        stock:
+          type: integer
+          minimum: 0
+          example: 10
+
+    ProductUpdate:
+      type: object
+      description: Al menos un campo. Si cambia el stock, se recalcula el status.
+      properties:
+        name:
+          type: string
+        price:
+          type: number
+          minimum: 0
+        stock:
+          type: integer
+          minimum: 0
+      example:
+        stock: 0
+
+    # ---------- Pedidos ----------
+    OrderStatus:
+      type: string
+      enum: [created, assigned, picked_up, in_transit, delivered, cancelled]
+
+    Priority:
+      type: string
+      enum: [low, normal, high]
+      default: normal
+
+    OrderItem:
+      type: object
+      description: Item del pedido con copia (snapshot) del nombre y precio al momento de la compra
+      required: [product, name, quantity, price]
+      properties:
+        product:
+          $ref: '#/components/schemas/ObjectId'
+        name:
+          type: string
+          example: Caja test
+        quantity:
+          type: integer
+          minimum: 1
+          example: 2
+        price:
+          type: number
+          example: 100
+
+    OrderItemInput:
+      type: object
+      required: [product, quantity]
+      properties:
+        product:
+          $ref: '#/components/schemas/ObjectId'
+        quantity:
+          type: integer
+          minimum: 1
+          example: 2
+
+    OrderInput:
+      type: object
+      required: [customer, items, deliveryAddress]
+      description: Precio, total y estado los calcula el servidor; si se envían, se ignoran
+      properties:
+        customer:
+          allOf:
+            - $ref: '#/components/schemas/ObjectId'
+          description: Id de un usuario con rol user
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/OrderItemInput'
+        deliveryAddress:
+          type: string
+          example: Av. Siempre Viva 742
+        priority:
+          $ref: '#/components/schemas/Priority'
+
+    OrderBase:
+      type: object
+      required: [_id, items, deliveryAddress, total, status, priority]
+      properties:
+        _id:
+          $ref: '#/components/schemas/ObjectId'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        deliveryAddress:
+          type: string
+          example: Av. Siempre Viva 742
+        total:
+          type: number
+          example: 200
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Order:
+      description: Pedido recién creado (customer como id)
+      allOf:
+        - $ref: '#/components/schemas/OrderBase'
+        - type: object
+          properties:
+            customer:
+              $ref: '#/components/schemas/ObjectId'
+
+    OrderDetail:
+      description: Pedido con los datos del cliente (respuesta de lecturas y cambios de estado)
+      allOf:
+        - $ref: '#/components/schemas/OrderBase'
+        - type: object
+          properties:
+            customer:
+              $ref: '#/components/schemas/PersonSummary'
+
+    OrderStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status:
+          allOf:
+            - $ref: '#/components/schemas/OrderStatus'
+          description: assigned no se acepta acá (se alcanza asignando repartidor)
+      example:
+        status: picked_up
+
+    Tracking:
+      type: object
+      properties:
+        order:
+          type: object
+          properties:
+            _id:
+              $ref: '#/components/schemas/ObjectId'
+            status:
+              $ref: '#/components/schemas/OrderStatus'
+            priority:
+              $ref: '#/components/schemas/Priority'
+            deliveryAddress:
+              type: string
+            total:
+              type: number
+            updatedAt:
+              type: string
+              format: date-time
+        delivery:
+          nullable: true
+          description: null si el pedido todavía no tiene entrega
+          type: object
+          properties:
+            _id:
+              $ref: '#/components/schemas/ObjectId'
+            status:
+              $ref: '#/components/schemas/DeliveryStatus'
+            driver:
+              allOf:
+                - $ref: '#/components/schemas/PersonSummary'
+              nullable: true
+            updatedAt:
+              type: string
+              format: date-time
+
+    # ---------- Entregas ----------
+    DeliveryStatus:
+      type: string
+      enum: [pending, assigned, in_transit, delivered]
+
+    Delivery:
+      description: Entrega recién creada (pending y sin repartidor)
+      allOf:
+        - type: object
+          required: [_id, order, driver, status]
+          properties:
+            _id:
+              $ref: '#/components/schemas/ObjectId'
+            order:
+              $ref: '#/components/schemas/ObjectId'
+            driver:
+              type: string
+              nullable: true
+              example: null
+            status:
+              $ref: '#/components/schemas/DeliveryStatus'
+        - $ref: '#/components/schemas/Timestamps'
+
+    DeliveryDetail:
+      description: Entrega con el resumen del pedido y los datos del repartidor
+      allOf:
+        - type: object
+          properties:
+            _id:
+              $ref: '#/components/schemas/ObjectId'
+            order:
+              type: object
+              properties:
+                _id:
+                  $ref: '#/components/schemas/ObjectId'
+                status:
+                  $ref: '#/components/schemas/OrderStatus'
+                total:
+                  type: number
+                deliveryAddress:
+                  type: string
+                priority:
+                  $ref: '#/components/schemas/Priority'
+            driver:
+              allOf:
+                - $ref: '#/components/schemas/PersonSummary'
+              nullable: true
+            status:
+              $ref: '#/components/schemas/DeliveryStatus'
+        - $ref: '#/components/schemas/Timestamps'
+
+    DeliveryInput:
+      type: object
+      required: [order]
+      properties:
+        order:
+          allOf:
+            - $ref: '#/components/schemas/ObjectId'
+          description: Id de un pedido en estado created y sin entrega
+
+    AssignDriverInput:
+      type: object
+      required: [driver]
+      properties:
+        driver:
+          allOf:
+            - $ref: '#/components/schemas/ObjectId'
+          description: Id de un usuario con rol driver
+
+    # ---------- Mocks ----------
+    MockUser:
+      type: object
+      properties:
+        firstName:
+          type: string
+          example: Luisa
+        lastName:
+          type: string
+          example: Aguirre Rico
+        email:
+          type: string
+          example: luisa_aguirrerico.atvpu@shipnow.test
+        role:
+          type: string
+          enum: [user, driver]
+
+    MockProduct:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Mesa Rústico de Madera
+        price:
+          type: integer
+          example: 8543
+        stock:
+          type: integer
+          example: 21
+        status:
+          $ref: '#/components/schemas/ProductStatus'
+
+    MockOrder:
+      type: object
+      properties:
+        customer:
+          $ref: '#/components/schemas/ObjectId'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        deliveryAddress:
+          type: string
+        total:
+          type: number
+        status:
+          $ref: '#/components/schemas/OrderStatus'
+        priority:
+          $ref: '#/components/schemas/Priority'
+
+    MockDelivery:
+      type: object
+      properties:
+        order:
+          $ref: '#/components/schemas/ObjectId'
+        driver:
+          type: string
+          nullable: true
+          description: null cuando la entrega está pending
+        status:
+          $ref: '#/components/schemas/DeliveryStatus'
+
+    SeedInput:
+      type: object
+      description: Cantidades por colección (enteros entre 0 y 100, al menos una mayor a 0)
+      properties:
+        users:
+          type: integer
+          minimum: 0
+          maximum: 100
+        products:
+          type: integer
+          minimum: 0
+          maximum: 100
+        orders:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Requiere users y products en el mismo seed
+        deliveries:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: No puede superar a orders
+      example:
+        users: 10
+        products: 5
+        orders: 8
+        deliveries: 5
+
+    SeedResult:
+      type: object
+      properties:
+        insertados:
+          type: object
+          properties:
+            users:
+              type: integer
+            products:
+              type: integer
+            orders:
+              type: integer
+            deliveries:
+              type: integer
+      example:
+        insertados:
+          users: 10
+          products: 5
+          orders: 8
+          deliveries: 5
+
+    SeedUsersResult:
+      type: object
+      properties:
+        insertados:
+          type: integer
+          example: 10
+        coleccion:
+          type: string
+          example: users
+
+  # ---------- Ejemplos de error (mismos mensajes que src/errors/errorDictionary.js) ----------
+  examples:
+    ValidationError:
+      summary: VALIDATION_ERROR
+      value:
+        status: error
+        error: VALIDATION_ERROR
+        message: Los datos enviados no son válidos
+        details: price debe ser un número mayor o igual a 0
+    InvalidJson:
+      summary: INVALID_JSON
+      value:
+        status: error
+        error: INVALID_JSON
+        message: El cuerpo de la petición no es un JSON válido
+    DuplicateResource:
+      summary: DUPLICATE_RESOURCE
+      value:
+        status: error
+        error: DUPLICATE_RESOURCE
+        message: Ya existe un recurso con esos datos
+        details: 'Valor duplicado en: email'
+    UserNotFound:
+      summary: USER_NOT_FOUND
+      value:
+        status: error
+        error: USER_NOT_FOUND
+        message: No se encontró el usuario solicitado
+    UserAlreadyExists:
+      summary: USER_ALREADY_EXISTS
+      value:
+        status: error
+        error: USER_ALREADY_EXISTS
+        message: Ya existe un usuario con ese email
+    InvalidUserRole:
+      summary: INVALID_USER_ROLE
+      value:
+        status: error
+        error: INVALID_USER_ROLE
+        message: El rol indicado no es válido
+        details: 'Valores permitidos: admin, user, driver'
+    ProductNotFound:
+      summary: PRODUCT_NOT_FOUND
+      value:
+        status: error
+        error: PRODUCT_NOT_FOUND
+        message: No se encontró el producto solicitado
+    ProductNotAvailable:
+      summary: PRODUCT_NOT_AVAILABLE
+      value:
+        status: error
+        error: PRODUCT_NOT_AVAILABLE
+        message: El producto no está disponible
+        details: Camiseta Guapa de Granito
+    OrderNotFound:
+      summary: ORDER_NOT_FOUND
+      value:
+        status: error
+        error: ORDER_NOT_FOUND
+        message: No se encontró el pedido solicitado
+    OrderItemsRequired:
+      summary: ORDER_ITEMS_REQUIRED
+      value:
+        status: error
+        error: ORDER_ITEMS_REQUIRED
+        message: El pedido debe incluir al menos un item válido
+    InvalidOrderStatus:
+      summary: INVALID_ORDER_STATUS
+      value:
+        status: error
+        error: INVALID_ORDER_STATUS
+        message: El estado indicado no es válido para un pedido
+        details: 'Valores permitidos: created, assigned, picked_up, in_transit, delivered, cancelled'
+    InvalidStatusTransition:
+      summary: INVALID_STATUS_TRANSITION
+      value:
+        status: error
+        error: INVALID_STATUS_TRANSITION
+        message: El pedido no puede pasar a ese estado desde su estado actual
+        details: 'De "assigned" solo puede pasar a: picked_up, cancelled'
+    DeliveryNotFound:
+      summary: DELIVERY_NOT_FOUND
+      value:
+        status: error
+        error: DELIVERY_NOT_FOUND
+        message: No se encontró la entrega solicitada
+    InvalidDeliveryStatus:
+      summary: INVALID_DELIVERY_STATUS
+      value:
+        status: error
+        error: INVALID_DELIVERY_STATUS
+        message: El estado indicado no es válido para una entrega
+        details: 'Valores permitidos: pending, assigned, in_transit, delivered'
+    DeliveryAlreadyExists:
+      summary: DELIVERY_ALREADY_EXISTS
+      value:
+        status: error
+        error: DELIVERY_ALREADY_EXISTS
+        message: El pedido ya tiene una entrega asociada
+    DeliveryAlreadyAssigned:
+      summary: DELIVERY_ALREADY_ASSIGNED
+      value:
+        status: error
+        error: DELIVERY_ALREADY_ASSIGNED
+        message: La entrega ya tiene un repartidor asignado
+    OrderNotDeliverable:
+      summary: ORDER_NOT_DELIVERABLE
+      value:
+        status: error
+        error: ORDER_NOT_DELIVERABLE
+        message: El pedido no admite esta operación de entrega en su estado actual
+    InvalidMockAmount:
+      summary: INVALID_MOCK_AMOUNT
+      value:
+        status: error
+        error: INVALID_MOCK_AMOUNT
+        message: La cantidad de registros a generar debe ser un entero entre 0 y 100
+        details: qty debe ser un número entero entre 0 y 100
+    MockGenerationError:
+      summary: MOCK_GENERATION_ERROR
+      value:
+        status: error
+        error: MOCK_GENERATION_ERROR
+        message: No se pudieron generar los datos de prueba
+    DatabaseError:
+      summary: DATABASE_ERROR
+      value:
+        status: error
+        error: DATABASE_ERROR
+        message: Error al acceder a la base de datos
+    InternalServerError:
+      summary: INTERNAL_SERVER_ERROR
+      value:
+        status: error
+        error: INTERNAL_SERVER_ERROR
+        message: Error interno del servidor
+
+  # ---------- Respuesta 500 común a todos los endpoints ----------
+  responses:
+    ServerError:
+      description: Error inesperado o base de datos inaccesible
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            INTERNAL_SERVER_ERROR:
+              $ref: '#/components/examples/InternalServerError'
+            DATABASE_ERROR:
+              $ref: '#/components/examples/DatabaseError'

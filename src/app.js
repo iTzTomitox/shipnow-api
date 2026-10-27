@@ -22,11 +22,14 @@ app.use('/api/orders', ordersRouter)
 app.use('/api/users', usersRouter)
 app.use('/api/deliveries', deliveriesRouter)
 
+// Documentación interactiva (OpenAPI). Disponible en todos los entornos.
+app.get('/api/docs.json', (req, res) => res.json(swaggerSpecs)) // especificación cruda
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs))
+
+// Herramientas internas: no se exponen en producción
 if (config.nodeEnv !== 'production') {
-  app.get('/api/docs.json', (req, res) => res.json(swaggerSpecs)) // especificación cruda
-  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs))
   app.use('/api/mocks', mocksRouter)
-  app.use('/api', loggerRouter) // GET /api/loggerTest (herramienta interna)
+  app.use('/api', loggerRouter) // GET /api/loggerTest
 }
 
 app.use(notFound)

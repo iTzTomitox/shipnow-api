@@ -1,0 +1,265 @@
+# Herramienta interna de desarrollo y testing. No se monta en producción.
+# Cada endpoint responde también en un alias con el nombre usado en el temario.
+# Para no duplicar, las respuestas se definen una vez en components/responses
+# y tanto la ruta principal como el alias las referencian.
+components:
+  responses:
+    MockUsersOk:
+      description: Usuarios simulados con la forma del modelo User
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessResponse'
+              - type: object
+                properties:
+                  payload:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MockUser'
+    MockProductsOk:
+      description: Productos simulados con la forma del modelo Product
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessResponse'
+              - type: object
+                properties:
+                  payload:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MockProduct'
+    MockOrdersOk:
+      description: Pedidos simulados con la forma del modelo Order
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessResponse'
+              - type: object
+                properties:
+                  payload:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MockOrder'
+    MockDeliveriesOk:
+      description: Entregas simuladas con la forma del modelo Delivery
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessResponse'
+              - type: object
+                properties:
+                  payload:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MockDelivery'
+    InvalidMockAmount:
+      description: qty no es un entero entre 0 y 100 (texto, negativo, decimal o mayor a 100)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            INVALID_MOCK_AMOUNT:
+              $ref: '#/components/examples/InvalidMockAmount'
+    SeedOk:
+      description: Datos insertados
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/SuccessResponse'
+              - type: object
+                properties:
+                  payload:
+                    oneOf:
+                      - $ref: '#/components/schemas/SeedResult'
+                      - $ref: '#/components/schemas/SeedUsersResult'
+    SeedInvalid:
+      description: |
+        Cantidad inválida (texto, negativa, mayor a 100), ninguna cantidad mayor a 0,
+        pedidos sin usuarios o productos en el mismo seed, o más entregas que pedidos
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            INVALID_MOCK_AMOUNT:
+              $ref: '#/components/examples/InvalidMockAmount'
+            MAS_ENTREGAS_QUE_PEDIDOS:
+              summary: INVALID_MOCK_AMOUNT (más entregas que pedidos)
+              value:
+                status: error
+                error: INVALID_MOCK_AMOUNT
+                message: La cantidad de registros a generar debe ser un entero entre 0 y 100
+                details: deliveries no puede superar a orders (cada entrega pertenece a un pedido)
+    SeedFailed:
+      description: Falló la inserción en MongoDB (lo insertado en pasos anteriores queda guardado)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            MOCK_GENERATION_ERROR:
+              $ref: '#/components/examples/MockGenerationError'
+  requestBodies:
+    Seed:
+      required: false
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/SeedInput'
+  parameters:
+    SeedQty:
+      name: qty
+      in: query
+      required: false
+      description: Variante simple, inserta qty usuarios (entero entre 1 y 100)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+
+paths:
+  /api/mocks/users:
+    get:
+      tags: [Mocks]
+      summary: Usuarios simulados (no se guardan)
+      description: 'Rol user o driver (~30% repartidores). Alias: /api/mocks/mockingusers'
+      parameters:
+        - $ref: '#/components/parameters/MockQty'
+      responses:
+        '200':
+          $ref: '#/components/responses/MockUsersOk'
+        '400':
+          $ref: '#/components/responses/InvalidMockAmount'
+  /api/mocks/mockingusers:
+    get:
+      tags: [Mocks]
+      summary: Usuarios simulados (alias del temario)
+      description: Mismo comportamiento que GET /api/mocks/users
+      parameters:
+        - $ref: '#/components/parameters/MockQty'
+      responses:
+        '200':
+          $ref: '#/components/responses/MockUsersOk'
+        '400':
+          $ref: '#/components/responses/InvalidMockAmount'
+
+  /api/mocks/products:
+    get:
+      tags: [Mocks]
+      summary: Productos simulados (no se guardan)
+      description: 'Status coherente con el stock (~15% sin stock). Alias: /api/mocks/mockingproducts'
+      parameters:
+        - $ref: '#/components/parameters/MockQty'
+      responses:
+        '200':
+          $ref: '#/components/responses/MockProductsOk'
+        '400':
+          $ref: '#/components/responses/InvalidMockAmount'
+  /api/mocks/mockingproducts:
+    get:
+      tags: [Mocks]
+      summary: Productos simulados (alias del temario)
+      description: Mismo comportamiento que GET /api/mocks/products
+      parameters:
+        - $ref: '#/components/parameters/MockQty'
+      responses:
+        '200':
+          $ref: '#/components/responses/MockProductsOk'
+        '400':
+          $ref: '#/components/responses/InvalidMockAmount'
+
+  /api/mocks/orders:
+    get:
+      tags: [Mocks]
+      summary: Pedidos simulados (no se guardan)
+      description: 'Items que referencian productos simulados, total calculado, estado created. Alias: /api/mocks/mockingorders'
+      parameters:
+        - $ref: '#/components/parameters/MockQty'
+      responses:
+        '200':
+          $ref: '#/components/responses/MockOrdersOk'
+        '400':
+          $ref: '#/components/responses/InvalidMockAmount'
+  /api/mocks/mockingorders:
+    get:
+      tags: [Mocks]
+      summary: Pedidos simulados (alias del temario)
+      description: Mismo comportamiento que GET /api/mocks/orders
+      parameters:
+        - $ref: '#/components/parameters/MockQty'
+      responses:
+        '200':
+          $ref: '#/components/responses/MockOrdersOk'
+        '400':
+          $ref: '#/components/responses/InvalidMockAmount'
+
+  /api/mocks/deliveries:
+    get:
+      tags: [Mocks]
+      summary: Entregas simuladas (no se guardan)
+      description: 'Pending sin repartidor; assigned, in_transit o delivered con repartidor. Alias: /api/mocks/mockingdeliveries'
+      parameters:
+        - $ref: '#/components/parameters/MockQty'
+      responses:
+        '200':
+          $ref: '#/components/responses/MockDeliveriesOk'
+        '400':
+          $ref: '#/components/responses/InvalidMockAmount'
+  /api/mocks/mockingdeliveries:
+    get:
+      tags: [Mocks]
+      summary: Entregas simuladas (alias del temario)
+      description: Mismo comportamiento que GET /api/mocks/deliveries
+      parameters:
+        - $ref: '#/components/parameters/MockQty'
+      responses:
+        '200':
+          $ref: '#/components/responses/MockDeliveriesOk'
+        '400':
+          $ref: '#/components/responses/InvalidMockAmount'
+
+  /api/mocks/seed:
+    post:
+      tags: [Mocks]
+      summary: Insertar datos de prueba en MongoDB
+      description: |
+        Dos formas de uso:
+        - Con ?qty=N (sin body): inserta N usuarios y responde { insertados, coleccion }.
+        - Sin qty, con body { users, products, orders, deliveries }: inserta en orden
+          usuarios → productos → pedidos → entregas usando los _id reales. Los pedidos
+          pertenecen a usuarios con rol user; las entregas con repartidor usan usuarios
+          con rol driver; los pedidos sin entrega quedan created o cancelled.
+        Alias: /api/mocks/generateData
+      parameters:
+        - $ref: '#/components/parameters/SeedQty'
+      requestBody:
+        $ref: '#/components/requestBodies/Seed'
+      responses:
+        '201':
+          $ref: '#/components/responses/SeedOk'
+        '400':
+          $ref: '#/components/responses/SeedInvalid'
+        '500':
+          $ref: '#/components/responses/SeedFailed'
+  /api/mocks/generateData:
+    post:
+      tags: [Mocks]
+      summary: Insertar datos de prueba (alias del temario)
+      description: Mismo comportamiento que POST /api/mocks/seed
+      parameters:
+        - $ref: '#/components/parameters/SeedQty'
+      requestBody:
+        $ref: '#/components/requestBodies/Seed'
+      responses:
+        '201':
+          $ref: '#/components/responses/SeedOk'
+        '400':
+          $ref: '#/components/responses/SeedInvalid'
+        '500':
+          $ref: '#/components/responses/SeedFailed'

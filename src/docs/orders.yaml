@@ -1,0 +1,236 @@
+paths:
+  /api/orders:
+    get:
+      tags: [Orders]
+      summary: Listar pedidos
+      description: Incluye los datos del cliente (firstName, lastName, email).
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filtra por estado del pedido
+          schema:
+            $ref: '#/components/schemas/OrderStatus'
+      responses:
+        '200':
+          description: Lista de pedidos, los más nuevos primero
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/OrderDetail'
+        '400':
+          description: Estado inválido en el filtro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INVALID_ORDER_STATUS:
+                  $ref: '#/components/examples/InvalidOrderStatus'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [Orders]
+      summary: Crear un pedido
+      description: |
+        El cliente envía solo el id y la cantidad de cada producto. El servidor valida que el
+        cliente exista y tenga rol user, y que cada producto exista y esté available; copia
+        nombre y precio (snapshot), calcula el total y fija el estado created.
+        No descuenta stock (decisión de diseño documentada en el README).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderInput'
+            example:
+              customer: 6ace2fddd86389ce141632a7
+              items:
+                - product: 6ace2fbed86389ce141632a6
+                  quantity: 2
+              deliveryAddress: Av. Siempre Viva 742
+              priority: high
+      responses:
+        '201':
+          description: Pedido creado en estado created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/Order'
+        '400':
+          description: |
+            Datos inválidos: falta customer o deliveryAddress, priority inexistente, el customer no
+            tiene rol user (VALIDATION_ERROR); items vacío o item inválido (ORDER_ITEMS_REQUIRED);
+            JSON mal formado (INVALID_JSON)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  $ref: '#/components/examples/ValidationError'
+                ORDER_ITEMS_REQUIRED:
+                  $ref: '#/components/examples/OrderItemsRequired'
+                INVALID_JSON:
+                  $ref: '#/components/examples/InvalidJson'
+        '404':
+          description: El cliente o alguno de los productos no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                USER_NOT_FOUND:
+                  $ref: '#/components/examples/UserNotFound'
+                PRODUCT_NOT_FOUND:
+                  $ref: '#/components/examples/ProductNotFound'
+        '409':
+          description: Alguno de los productos no tiene stock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                PRODUCT_NOT_AVAILABLE:
+                  $ref: '#/components/examples/ProductNotAvailable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/orders/{oid}:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Orders]
+      summary: Obtener un pedido
+      responses:
+        '200':
+          description: Pedido con los datos del cliente
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/OrderDetail'
+        '404':
+          description: El pedido no existe (o el id no tiene formato válido)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ORDER_NOT_FOUND:
+                  $ref: '#/components/examples/OrderNotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/orders/{oid}/tracking:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    get:
+      tags: [Orders]
+      summary: Seguimiento de un pedido
+      description: Estado actual del pedido y su entrega (con el repartidor), o delivery null si todavía no tiene.
+      responses:
+        '200':
+          description: Seguimiento del pedido
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/Tracking'
+        '404':
+          description: El pedido no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ORDER_NOT_FOUND:
+                  $ref: '#/components/examples/OrderNotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/orders/{oid}/status:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    patch:
+      tags: [Orders]
+      summary: Cambiar el estado de un pedido
+      description: |
+        Transiciones válidas: created → cancelled; assigned → picked_up | cancelled;
+        picked_up → in_transit; in_transit → delivered. delivered y cancelled son finales.
+        El estado assigned solo se alcanza asignando repartidor (PATCH /api/deliveries/{did}/assign).
+        La escritura es condicional: si otra petición cambió el estado en el medio, responde 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrderStatusUpdate'
+      responses:
+        '200':
+          description: Estado actualizado (devuelve el pedido con los datos del cliente)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/OrderDetail'
+        '400':
+          description: El estado no existe (por ejemplo on_the_way) o falta en el body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INVALID_ORDER_STATUS:
+                  $ref: '#/components/examples/InvalidOrderStatus'
+        '404':
+          description: El pedido no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ORDER_NOT_FOUND:
+                  $ref: '#/components/examples/OrderNotFound'
+        '409':
+          description: Transición no permitida desde el estado actual, o intento de pasar a assigned por este endpoint
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INVALID_STATUS_TRANSITION:
+                  $ref: '#/components/examples/InvalidStatusTransition'
+                ASSIGNED_NOT_ALLOWED:
+                  summary: INVALID_STATUS_TRANSITION (assigned por este endpoint)
+                  value:
+                    status: error
+                    error: INVALID_STATUS_TRANSITION
+                    message: El pedido no puede pasar a ese estado desde su estado actual
+                    details: Para pasar a assigned usá PATCH /api/deliveries/:did/assign
+        '500':
+          $ref: '#/components/responses/ServerError'

@@ -1,0 +1,32 @@
+paths:
+  /api/loggerTest:
+    get:
+      tags: [Logger]
+      summary: Probar el logger (herramienta interna)
+      description: |
+        Herramienta de validación, NO es una funcionalidad de negocio. No se monta en producción.
+        Genera un log de prueba en cada nivel. Resultado esperado:
+        - Consola (solo desarrollo): los 6 niveles.
+        - logs/AAAA-MM-DD/combined.log: fatal, error, warning e info.
+        - logs/AAAA-MM-DD/error.log: solo fatal y error.
+      responses:
+        '200':
+          description: Logs generados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: Logs de prueba generados en todos los niveles
+                          levels:
+                            type: array
+                            items:
+                              type: string
+                            example: [fatal, error, warning, info, http, debug]

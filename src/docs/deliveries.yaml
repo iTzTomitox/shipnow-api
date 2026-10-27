@@ -1,0 +1,207 @@
+paths:
+  /api/deliveries:
+    get:
+      tags: [Deliveries]
+      summary: Listar entregas
+      description: Incluye el resumen del pedido y los datos del repartidor.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filtra por estado de la entrega
+          schema:
+            $ref: '#/components/schemas/DeliveryStatus'
+        - name: driver
+          in: query
+          required: false
+          description: Filtra por id del repartidor (un id con formato inválido devuelve una lista vacía)
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de entregas, las más nuevas primero
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/DeliveryDetail'
+        '400':
+          description: Estado inválido en el filtro
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                INVALID_DELIVERY_STATUS:
+                  $ref: '#/components/examples/InvalidDeliveryStatus'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [Deliveries]
+      summary: Crear la entrega de un pedido
+      description: Solo para pedidos en estado created y sin entrega. La entrega nace pending y sin repartidor.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeliveryInput'
+      responses:
+        '201':
+          description: Entrega creada
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/Delivery'
+        '400':
+          description: Falta el id del pedido o el JSON está mal formado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    status: error
+                    error: VALIDATION_ERROR
+                    message: Los datos enviados no son válidos
+                    details: order es obligatorio (id del pedido)
+                INVALID_JSON:
+                  $ref: '#/components/examples/InvalidJson'
+        '404':
+          description: El pedido no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ORDER_NOT_FOUND:
+                  $ref: '#/components/examples/OrderNotFound'
+        '409':
+          description: El pedido no está created, o ya tiene una entrega
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ORDER_NOT_DELIVERABLE:
+                  $ref: '#/components/examples/OrderNotDeliverable'
+                DELIVERY_ALREADY_EXISTS:
+                  $ref: '#/components/examples/DeliveryAlreadyExists'
+                DUPLICATE_RESOURCE:
+                  $ref: '#/components/examples/DuplicateResource'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/deliveries/{did}:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    get:
+      tags: [Deliveries]
+      summary: Obtener una entrega
+      responses:
+        '200':
+          description: Entrega con el resumen del pedido y el repartidor
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/DeliveryDetail'
+        '404':
+          description: La entrega no existe (o el id no tiene formato válido)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                DELIVERY_NOT_FOUND:
+                  $ref: '#/components/examples/DeliveryNotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/deliveries/{did}/assign:
+    parameters:
+      - $ref: '#/components/parameters/DeliveryId'
+    patch:
+      tags: [Deliveries]
+      summary: Asignar repartidor
+      description: |
+        La entrega debe estar pending y el usuario debe tener rol driver. La entrega y el
+        pedido pasan a assigned. Si la actualización de la entrega falla, el pedido vuelve
+        a created (compensación).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignDriverInput'
+            example:
+              driver: 6ac456df2d75c1b442d8c5aa
+      responses:
+        '200':
+          description: Repartidor asignado (devuelve la entrega con pedido y repartidor)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/DeliveryDetail'
+        '400':
+          description: Falta el id del repartidor o el usuario no tiene rol driver
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  summary: VALIDATION_ERROR
+                  value:
+                    status: error
+                    error: VALIDATION_ERROR
+                    message: Los datos enviados no son válidos
+                    details: driver debe ser un usuario con rol driver
+        '404':
+          description: La entrega, el repartidor o el pedido asociado no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                DELIVERY_NOT_FOUND:
+                  $ref: '#/components/examples/DeliveryNotFound'
+                USER_NOT_FOUND:
+                  $ref: '#/components/examples/UserNotFound'
+                ORDER_NOT_FOUND:
+                  $ref: '#/components/examples/OrderNotFound'
+        '409':
+          description: La entrega ya tiene repartidor, o el pedido ya no está created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                DELIVERY_ALREADY_ASSIGNED:
+                  $ref: '#/components/examples/DeliveryAlreadyAssigned'
+                ORDER_NOT_DELIVERABLE:
+                  $ref: '#/components/examples/OrderNotDeliverable'
+        '500':
+          $ref: '#/components/responses/ServerError'
