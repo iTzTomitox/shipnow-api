@@ -2,7 +2,7 @@
 
 API REST de logística para gestionar usuarios, productos, pedidos y entregas. Proyecto integrador de **Programación Backend III** (CoderHouse).
 
-**Estado actual:** Pre-entrega 4 — logging profesional con Winston y monitoreo básico.
+**Estado actual:** Pre-entrega 5 — documentación interactiva de la API con Swagger/OpenAPI.
 
 ## Tecnologías
 
@@ -12,6 +12,7 @@ API REST de logística para gestionar usuarios, productos, pedidos y entregas. P
 - dotenv
 - Mocha + Chai (tests)
 - Winston + winston-daily-rotate-file (logging)
+- Swagger / OpenAPI 3 (swagger-jsdoc + swagger-ui-express)
 
 ## Instalación y ejecución local
 
@@ -65,6 +66,7 @@ src/
 ├── config/          # buildConfig (validación), env.config (único lector de process.env), db, logger
 ├── constants/       # roles y estados del dominio (Object.freeze)
 ├── controllers/     # única puerta de entrada HTTP: req/res y status codes
+├── docs/            # Swagger: configuración y documentación OpenAPI en YAML
 ├── errors/          # AppError y diccionario de errores (código → HTTP + mensaje)
 ├── middlewares/     # 404 de rutas inexistentes y middleware global de errores
 ├── mocks/           # generadores de datos simulados (funciones puras, sin base de datos)
@@ -127,6 +129,31 @@ Roles y estados se definen una sola vez en `src/constants/index.js`, congelados 
 | `MAX_MOCK_ITEMS` | `100` (máximo de registros por pedido de mocks) |
 
 `src/utils/constants.js` re-exporta el mismo contenido (la consigna menciona las dos rutas).
+
+## Documentación interactiva (Swagger)
+
+Con el servidor levantado (`npm run dev`), la documentación está en:
+
+- **Swagger UI:** [http://localhost:3000/api/docs](http://localhost:3000/api/docs), para consultar y probar cada endpoint con "Try it out".
+- **Especificación OpenAPI en JSON:** [http://localhost:3000/api/docs.json](http://localhost:3000/api/docs.json)
+
+La configuración está separada de las rutas: `src/docs/swagger.config.js` define la información general (nombre, versión, descripción y servidor local) y junta los archivos YAML de `src/docs/`. Ningún router contiene documentación.
+
+| Archivo | Contenido |
+|---|---|
+| `schemas.yaml` | Schemas reutilizables (usuario, producto, pedido, item de pedido, entrega, tracking, mocks, respuesta exitosa y respuesta de error), parámetros de ruta y un ejemplo por cada código de error |
+| `users.yaml`, `products.yaml`, `orders.yaml`, `deliveries.yaml` | Endpoints de cada módulo: método, descripción, parámetros, body, respuesta exitosa y cada error posible |
+| `mocks.yaml` | Endpoints de mocks y sus alias del temario |
+| `logger.yaml` | `GET /api/loggerTest` (herramienta interna) |
+
+**Módulos documentados (tags):** Users, Products, Orders, Deliveries, Mocks y Logger.
+
+Aclaraciones para probar desde Swagger UI:
+
+- Los endpoints con `{uid}`, `{pid}`, `{oid}` o `{did}` necesitan ids reales: se obtienen del listado correspondiente (por ejemplo, `GET /api/users?role=driver` para un repartidor). `POST /api/mocks/seed` carga datos de prueba si la base está vacía.
+- Cuando un mismo status tiene varios errores posibles (por ejemplo, el 404 al crear un pedido puede ser `USER_NOT_FOUND` o `PRODUCT_NOT_FOUND`), Swagger UI muestra un desplegable con un ejemplo por código. Los ejemplos usan exactamente los códigos, mensajes y status del diccionario de errores.
+- Los pedidos y entregas se documentan con dos schemas porque la API devuelve formas distintas: al crear, el cliente o el pedido vienen como id (`Order`, `Delivery`); al leer, vienen con sus datos (`OrderDetail`, `DeliveryDetail`).
+- Swagger está disponible en todos los entornos. **Mocks y Logger solo se documentan fuera de producción**, igual que sus rutas: con `NODE_ENV=production` no se montan y tampoco aparecen en la especificación.
 
 ## Endpoints
 
