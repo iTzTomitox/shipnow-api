@@ -2,7 +2,7 @@
 
 API REST de logística para gestionar usuarios, productos, pedidos y entregas. Proyecto integrador de **Programación Backend III** (CoderHouse).
 
-**Estado actual:** Pre-entrega 5 — documentación interactiva de la API con Swagger/OpenAPI.
+**Estado actual:** Pre-entrega 6 — testing funcional con Mocha, Chai y Supertest.
 
 ## Tecnologías
 
@@ -10,7 +10,7 @@ API REST de logística para gestionar usuarios, productos, pedidos y entregas. P
 - Express 5
 - MongoDB Atlas + Mongoose 9
 - dotenv
-- Mocha + Chai (tests)
+- Mocha + Chai + Supertest + mongodb-memory-server (tests)
 - Winston + winston-daily-rotate-file (logging)
 - Swagger / OpenAPI 3 (swagger-jsdoc + swagger-ui-express)
 
@@ -78,7 +78,9 @@ src/
 ├── app.js           # arma Express (sin abrir puerto)
 └── server.js        # conecta a MongoDB y levanta el servidor
 tests/
-└── unit/            # tests de services con repositories falsos
+├── setup.js         # entorno de testing + MongoDB en memoria (root hooks de Mocha)
+├── unit/            # reglas de negocio con repositories falsos (sin base de datos)
+└── functional/      # endpoints reales con Supertest contra MongoDB en memoria
 ```
 
 ## Arquitectura por capas
@@ -433,17 +435,58 @@ Resultado esperado:
 | `logs/<fecha>/error.log` | Solo `fatal` y `error` |
 
 
-## Tests
+## Testing
+
+### Herramientas
+
+| Herramienta | Para qué |
+|---|---|
+| [Mocha](https://mochajs.org/) | Organiza y ejecuta los tests (`describe`, `it`, hooks) |
+| [Chai](https://www.chaijs.com/) | Aserciones (`expect`) |
+| [Supertest](https://github.com/ladjs/supertest) | Peticiones HTTP a la app de Express sin abrir un puerto |
+| [mongodb-memory-server](https://github.com/typegoose/mongodb-memory-server) | MongoDB real pero temporal, en memoria, para los tests funcionales |
+
+### Cómo ejecutarlos
 
 ```bash
 npm test
 ```
 
-Tests unitarios con Mocha y Chai sobre la validación de configuración, las constantes y las reglas de negocio de los services. Los services se prueban inyectándoles un repository falso, así que **no requieren base de datos ni archivo `.env`**.
+Corre la suite completa (unitaria y funcional) desde cero. La **primera vez** descarga el binario de MongoDB (puede tardar alrededor de un minuto) y queda en caché. Después, la suite tarda unos segundos.
 
-> **Nota:** Mocha y Chai son `devDependencies`. El script `pretest` ejecuta `npm install --include=dev` antes de cada `npm test`, así la suite corre aunque el proyecto se haya instalado con `--omit=dev` o `NODE_ENV=production`.
+El script `pretest` ejecuta `npm install --include=dev` antes de cada `npm test`, así la suite corre aunque el proyecto se haya instalado con `--omit=dev` o `NODE_ENV=production`.
 
-**Entorno de testing aislado:** `.mocharc.json` carga `tests/setup.js` antes de la suite. Ese archivo fija `NODE_ENV=test` y una URI local de test **antes** de que la app lea el `.env` (dotenv no pisa variables ya definidas), así los tests nunca usan la base de desarrollo. En `test` el logger es silencioso y no crea archivos.
+### Base de datos de testing
+
+**No hace falta crear ni configurar ninguna base de datos.** `tests/setup.js` levanta un MongoDB en memoria antes de la suite (root hooks de Mocha), conecta Mongoose a esa instancia y la apaga al terminar. Cada corrida empieza con una base vacía y descartable, separada de la de desarrollo.
+
+### Variables de entorno
+
+**No se necesita ningún `.env` para correr los tests.** `tests/setup.js` fija `NODE_ENV=test` (y valores de prueba para `PORT` y `MONGODB_URI`) **antes** de que la app lea el `.env`. Como dotenv no pisa variables ya definidas, los tests nunca pueden conectarse a la base de desarrollo. En `test`, el logger es silencioso y no crea archivos.
+
+### Qué cubren
+
+**Tests funcionales** (`tests/functional/`, con Supertest contra la API real):
+
+| Archivo | Módulo | Casos principales |
+|---|---|---|
+| `users.test.js` | Usuarios | Listado y filtro por rol, alta (rol por defecto, email normalizado, lista blanca), consulta por id, actualización, baja; errores 400, 404 y 409, incluida la concurrencia sobre el email único |
+| `products.test.js` | Productos | Listado con y sin stock, alta con estado calculado, consulta, actualización, baja; validaciones y 404 |
+| `orders.test.js` | Pedidos | Alta (snapshot, total, estado y prioridad), listado y filtro, consulta por id, todas las transiciones de estado y tracking; datos incompletos, recurso inexistente, estado inválido y transición no permitida |
+| `deliveries.test.js` | Entregas | Alta, listado y filtro, consulta, asignación de repartidor (pedido y entrega sincronizados); cada error 400, 404 y 409 |
+| `flow.test.js` | Flujo principal | Pedido → entrega → asignar repartidor → `picked_up` → `in_transit` → `delivered`, con el tracking en cada etapa |
+| `mocks.test.js` | Mocks | Las 8 rutas de vista previa y sus alias, seed simple y completo (verificando relaciones en la base); cantidades inválidas |
+| `logger.test.js` | Logger | `GET /api/loggerTest` |
+| `docs.test.js` | Swagger y errores generales | `/api/docs` y `/api/docs.json`, ruta inexistente, JSON mal formado en todos los endpoints con body |
+
+**Tests unitarios** (`tests/unit/`, sin base de datos): reglas de negocio de los services con repositories falsos (inyectados por constructor), configuración, constantes, diccionario de errores, middlewares, logger y generadores de mocks.
+
+### Criterios
+
+- **Respuestas exitosas:** cada test verifica el status y además la estructura del body y sus propiedades importantes.
+- **Errores:** `expectError()` verifica el status HTTP, `status: "error"`, el código interno y su mensaje exacto, comparándolos con el diccionario de errores.
+- **Coherencia con Swagger:** cada respuesta de error documentada en `src/docs/*.yaml` tiene un test que la produce (los 500 no se fuerzan, porque requieren tirar la base).
+- **Datos controlados y limpieza:** cada test crea sus propios datos por la API (`tests/functional/helpers.js`) y la base se vacía con `beforeEach(clearDatabase)`. Los tests no dependen del orden ni del estado previo, y la suite pasa dos veces seguidas sin limpiar nada a mano.
 
 ## Notas
 
