@@ -46,3 +46,13 @@ export const getOrderTracking = async (req, res, next) => {
     next(error)
   }
 }
+
+// Multer ya guardó el comprobante (req.file)
+export const addOrderProof = async (req, res, next) => {
+  try {
+    const order = await ordersService.addProof(req.params.oid, req.file)
+    res.status(200).json({ status: 'success', payload: order })
+  } catch (error) {
+    next(error)
+  }
+}

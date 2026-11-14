@@ -45,3 +45,13 @@ export const deleteUser = async (req, res, next) => {
     next(error)
   }
 }
+
+// Multer ya guardó el archivo (req.file) y parseó los campos de texto (req.body)
+export const addUserDocument = async (req, res, next) => {
+  try {
+    const user = await usersService.addDocument(req.params.uid, req.file, req.body?.type)
+    res.status(200).json({ status: 'success', payload: user })
+  } catch (error) {
+    next(error)
+  }
+}
