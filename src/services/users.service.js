@@ -1,6 +1,11 @@
-import { USER_ROLES } from '../constants/index.js'
+import { USER_ROLES, DOCUMENT_TYPES, UPLOAD_FOLDERS } from '../constants/index.js'
 import AppError from '../errors/AppError.js'
 import { usersRepository } from '../repositories/users.repository.js'
+import { fileStorage, buildFileMetadata } from '../utils/files.js'
+import logger from '../config/logger.js'
+
+// Tipos de documento que se pueden cargar a un usuario (delivery_proof es de pedidos)
+const USER_DOCUMENT_TYPES = [DOCUMENT_TYPES.USER_DOCUMENT, DOCUMENT_TYPES.DRIVER_LICENSE]
 
 const VALID_ROLES = Object.values(USER_ROLES)
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/ // algo@algo.algo, sin espacios
@@ -41,8 +46,9 @@ const validateUser = (data = {}, { partial = false } = {}) => {
 
 export default class UsersService {
   // Inyección de dependencias: recibe el repository por constructor
-  constructor(repository) {
+  constructor(repository, files = fileStorage) {
     this.repository = repository
+    this.files = files
   }
 
   async getAll({ role } = {}) {
@@ -87,7 +93,40 @@ export default class UsersService {
     if (!deleted) throw new AppError('USER_NOT_FOUND')
     return deleted
   }
+  
+  // Agrega un documento al usuario. Si algo falla después de que Multer guardó
+  // el archivo, se borra del disco: ningún request fallido deja archivos huérfanos.
+  async addDocument(id, file, type) {
+    if (!file) throw new AppError('FILE_REQUIRED', 'Campo de archivo esperado: document')
+
+    let filePath = file.path
+    try {
+      const documentType = type || DOCUMENT_TYPES.USER_DOCUMENT
+      if (!USER_DOCUMENT_TYPES.includes(documentType)) {
+        throw new AppError('INVALID_DOCUMENT_TYPE', `Valores permitidos: ${USER_DOCUMENT_TYPES.join(', ')}`)
+      }
+
+      const user = await this.repository.findById(id)
+      if (!user) throw new AppError('USER_NOT_FOUND')
+      if (documentType === DOCUMENT_TYPES.DRIVER_LICENSE && user.role !== USER_ROLES.DRIVER) {
+        throw new AppError('INVALID_DOCUMENT_TYPE', 'Solo un usuario con rol driver puede cargar una licencia')
+      }
+
+      // Multer guardó en documents/; las licencias van a su propia carpeta
+      if (documentType === DOCUMENT_TYPES.DRIVER_LICENSE) {
+        filePath = await this.files.moveFile(file.path, UPLOAD_FOLDERS[documentType])
+      }
+
+      const updated = await this.repository.addDocument(id, buildFileMetadata(file, documentType, filePath))
+      if (!updated) throw new AppError('USER_NOT_FOUND') // borrado entre la búsqueda y la escritura
+      logger.info(`Documento ${documentType} cargado para el usuario ${id}`, { size: file.size })
+      return updated
+    } catch (error) {
+      await this.files.removeFile(filePath) // limpieza: el archivo no quedó asociado a nada
+      throw error
+    }
+  }
 }
 
 // Instancia lista para usar (la clase sigue exportada para los tests)
-export const usersService = new UsersService(usersRepository)
+export const usersService = new UsersService(usersRepository, fileStorage)

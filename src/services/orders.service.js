@@ -3,7 +3,8 @@ import {
   ORDER_TRANSITIONS,
   DELIVERY_PRIORITY,
   PRODUCT_STATUS,
-  USER_ROLES
+  USER_ROLES,
+  DOCUMENT_TYPES
 } from '../constants/index.js'
 import AppError from '../errors/AppError.js'
 import { ordersRepository } from '../repositories/orders.repository.js'
@@ -11,9 +12,11 @@ import { usersRepository } from '../repositories/users.repository.js'
 import { productsRepository } from '../repositories/products.repository.js'
 import { deliveriesRepository } from '../repositories/deliveries.repository.js'
 import logger from '../config/logger.js'
+import { fileStorage, buildFileMetadata } from '../utils/files.js'
 
 const VALID_STATUSES = Object.values(ORDER_STATUS)
 const VALID_PRIORITIES = Object.values(DELIVERY_PRIORITY)
+const PROOF_STATUSES = [ORDER_STATUS.IN_TRANSIT, ORDER_STATUS.DELIVERED] // estados que admiten comprobante
 
 export const calculateOrderTotal = (items) =>
   items.reduce((acc, item) => acc + item.price * item.quantity, 0)
@@ -59,11 +62,12 @@ const assertValidStatus = (status) => {
 }
 
 export default class OrdersService {
-  constructor({ ordersRepository, usersRepository, productsRepository, deliveriesRepository }) {
+  constructor({ ordersRepository, usersRepository, productsRepository, deliveriesRepository, files = fileStorage }) {
     this.ordersRepository = ordersRepository
     this.usersRepository = usersRepository
     this.productsRepository = productsRepository
-        this.deliveriesRepository = deliveriesRepository
+    this.deliveriesRepository = deliveriesRepository
+    this.files = files
   }
 
   async getAll({ status } = {}) {
@@ -155,6 +159,34 @@ export default class OrdersService {
       delivery: delivery
         ? { _id: delivery._id, status: delivery.status, driver: delivery.driver, updatedAt: delivery.updatedAt }
         : null
+    }
+  }
+  
+  // Comprobante de entrega: solo con el pedido in_transit (pasa a delivered) o
+  // delivered (reemplaza al anterior). Si algo falla, el archivo subido se borra.
+  async addProof(id, file) {
+    if (!file) throw new AppError('FILE_REQUIRED', 'Campo de archivo esperado: proof')
+
+    try {
+      const order = await this.getById(id) // inexistente → ORDER_NOT_FOUND
+      if (!PROOF_STATUSES.includes(order.status)) {
+        throw new AppError('ORDER_NOT_DELIVERABLE', `El comprobante se carga con el pedido in_transit o delivered (está ${order.status})`)
+      }
+
+      // Escritura condicional: guarda el comprobante y deja el pedido en delivered
+      const proof = buildFileMetadata(file, DOCUMENT_TYPES.DELIVERY_PROOF)
+      const updated = await this.ordersRepository.setProof(id, order.status, proof, ORDER_STATUS.DELIVERED)
+      if (!updated) {
+        throw new AppError('INVALID_STATUS_TRANSITION', 'El estado del pedido cambió mientras se procesaba la solicitud')
+      }
+
+      // Si había un comprobante anterior, su archivo ya no lo referencia nadie
+      if (order.proof?.path) await this.files.removeFile(order.proof.path)
+      logger.info(`Comprobante cargado para el pedido ${id} (${order.status} → ${updated.status})`)
+      return updated
+    } catch (error) {
+      await this.files.removeFile(file.path) // limpieza: el archivo no quedó asociado a nada
+      throw error
     }
   }
 }
