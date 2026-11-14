@@ -2,7 +2,7 @@
 
 API REST de logística para gestionar usuarios, productos, pedidos y entregas. Proyecto integrador de **Programación Backend III** (CoderHouse).
 
-**Estado actual:** Pre-entrega 6 — testing funcional con Mocha, Chai y Supertest.
+**Estado actual:** Pre-entrega 7 — carga de archivos, documentos y comprobantes con Multer.
 
 ## Tecnologías
 
@@ -13,6 +13,7 @@ API REST de logística para gestionar usuarios, productos, pedidos y entregas. P
 - Mocha + Chai + Supertest + mongodb-memory-server (tests)
 - Winston + winston-daily-rotate-file (logging)
 - Swagger / OpenAPI 3 (swagger-jsdoc + swagger-ui-express)
+- Multer (carga de archivos)
 
 ## Instalación y ejecución local
 
@@ -50,6 +51,7 @@ npm test
 | `MONGODB_URI` | URI de conexión a MongoDB (la de tu cluster de Atlas) | `mongodb+srv://<usuario>:<clave>@<cluster>/shipnow` |
 | `NODE_ENV` | Entorno de ejecución: `development`, `test` o `production` | `development` |
 | `LOG_LEVEL` | Nivel mínimo de logs (opcional): `fatal`, `error`, `warning`, `info`, `http` o `debug`. Por defecto `debug` fuera de producción e `info` en producción | `debug` |
+| `UPLOADS_DIR` | Carpeta donde se guardan los archivos subidos (opcional, por defecto `uploads`) | `uploads` |
 
 `PORT`, `MONGODB_URI` y `NODE_ENV` son obligatorias; `LOG_LEVEL` es opcional.. La configuración se valida al arrancar (`src/config/buildConfig.js`): si falta alguna o tiene un valor inválido, la app **no arranca** y muestra un error descriptivo. Por ejemplo:
 
@@ -74,13 +76,14 @@ src/
 ├── repositories/    # único lugar que conoce Mongoose/MongoDB
 ├── routes/          # solo conectan path con método del controller
 ├── services/        # reglas de negocio
-├── utils/           # helpers
+├── utils/           # helpers (archivos: metadatos, mover y borrar)
 ├── app.js           # arma Express (sin abrir puerto)
 └── server.js        # conecta a MongoDB y levanta el servidor
 tests/
 ├── setup.js         # entorno de testing + MongoDB en memoria (root hooks de Mocha)
 ├── unit/            # reglas de negocio con repositories falsos (sin base de datos)
 └── functional/      # endpoints reales con Supertest contra MongoDB en memoria
+uploads/             # archivos subidos (se crea en ejecución, ignorada por git)
 ```
 
 ## Arquitectura por capas
@@ -275,6 +278,74 @@ Casos inválidos (todos responden 400 `INVALID_MOCK_AMOUNT`, con el motivo en `d
 |---|---|---|---|
 | GET | `/api/loggerTest` | — | Herramienta interna: genera un log en cada nivel (no se monta en producción). Ver [Logging](#logging) |
 
+## Carga de archivos
+
+Implementada con [Multer](https://github.com/expressjs/multer). La configuración está centralizada en `src/middlewares/upload.middleware.js`, separada de los routers: dónde se guarda cada archivo, cómo se nombra, qué formatos se aceptan y el tamaño máximo.
+
+| Endpoint | Campo de archivo | Campos adicionales | Qué hace |
+|---|---|---|---|
+| `POST /api/users/:uid/documents` | `document` | `type` (opcional): `user_document` (por defecto) o `driver_license` | Agrega un documento al usuario. La licencia solo se acepta para usuarios con rol `driver` |
+| `POST /api/orders/:oid/proof` | `proof` | — | Comprobante de entrega. Con el pedido `in_transit` lo guarda y el pedido pasa a `delivered`; con el pedido `delivered` reemplaza el anterior. En cualquier otro estado responde 409 |
+
+Las dos rutas reciben `multipart/form-data` y responden con la entidad actualizada (el usuario con su lista de documentos, o el pedido con su comprobante).
+
+**Validaciones:** formatos PDF, JPG y PNG; tamaño máximo 5 MB (Multer corta la subida mientras se recibe); un solo archivo, en el campo esperado; tipo de documento válido; entidad existente. Todos los errores responden con el formato general de la API (ver [Manejo de errores](#manejo-de-errores)).
+
+### Dónde se guardan
+
+```
+uploads/
+├── documents/   ← documentos de usuario
+├── licenses/    ← licencias de repartidor
+└── proofs/      ← comprobantes de entrega
+```
+
+Las carpetas se crean solas la primera vez que se usan. **`uploads/` está en `.gitignore`**: los archivos subidos nunca se versionan. La ubicación se puede cambiar con la variable opcional `UPLOADS_DIR`.
+
+Cada archivo se guarda con un **nombre generado por el servidor** (fecha + identificador aleatorio + extensión según el formato). El nombre que manda el cliente no se usa en el disco, así se evitan choques entre archivos y ataques de *path traversal* (nombres como `../../archivo`).
+
+### Qué se guarda en MongoDB
+
+**Solo los metadatos, nunca el archivo:** el usuario tiene una lista `documents` y el pedido un campo `proof`, con la misma forma:
+
+```json
+{
+  "originalName": "licencia.pdf",
+  "fileName": "1794627076851-b5984307-90f0-4d24-adbf-dd263f3ee54a.pdf",
+  "path": "uploads/licenses/1794627076851-b5984307-90f0-4d24-adbf-dd263f3ee54a.pdf",
+  "mimeType": "application/pdf",
+  "size": 24533,
+  "type": "driver_license",
+  "uploadedAt": "2026-11-14T00:31:16.000Z"
+}
+```
+
+### Sin archivos huérfanos
+
+Multer guarda el archivo **antes** de que el service valide la petición. Si después la validación falla (usuario o pedido inexistente, tipo de documento inválido, pedido en un estado que no admite comprobante), el service **borra el archivo del disco** antes de responder el error. Al reemplazar un comprobante, el archivo anterior también se borra. Ninguna petición fallida deja archivos sin asociar en `uploads/`.
+
+Los tests suben sus archivos a una carpeta temporal dentro de `node_modules/.cache` y la borran al terminar: la suite nunca deja archivos en `uploads/`.
+
+### Logging
+
+Se registran las cargas exitosas y los comprobantes asociados (`info`), y los intentos fallidos con su motivo, como formato no permitido, tamaño excedido o tipo de documento inválido (`warning`, desde el middleware de errores).
+
+### Probar la carga de archivos
+
+Desde Swagger UI (`/api/docs`), los dos endpoints tienen un botón para elegir el archivo. Desde la terminal:
+
+```bash
+curl -F "document=@./dni.pdf" http://localhost:3000/api/users/ID_USUARIO/documents
+```
+
+```bash
+curl -F "document=@./licencia.png" -F "type=driver_license" http://localhost:3000/api/users/ID_REPARTIDOR/documents
+```
+
+```bash
+curl -F "proof=@./comprobante.jpg" http://localhost:3000/api/orders/ID_PEDIDO_IN_TRANSIT/proof
+```
+
 ## Manejo de errores
 
 Todos los errores salen de **un único lugar**: el middleware global `src/middlewares/errorHandler.middleware.js`. Los services detectan el problema y lanzan un `AppError` con un código del diccionario (`src/errors/errorDictionary.js`); los controllers lo derivan con `next(error)`; el middleware arma la respuesta. Ninguna ruta ni controller responde errores por su cuenta.
@@ -307,6 +378,10 @@ Todos los errores salen de **un único lugar**: el middleware global `src/middle
 | `ORDER_ITEMS_REQUIRED` | 400 | Pedido sin items, o item sin `product` o con `quantity` < 1 |
 | `INVALID_ORDER_STATUS` | 400 | Estado de pedido inexistente (por ejemplo `on_the_way`) |
 | `INVALID_DELIVERY_STATUS` | 400 | Estado de entrega inexistente en un filtro |
+| `FILE_REQUIRED` | 400 | La petición no trae archivo |
+| `INVALID_FILE_TYPE` | 400 | Formato distinto de PDF, JPG o PNG |
+| `INVALID_DOCUMENT_TYPE` | 400 | `type` inexistente, o licencia para un usuario que no es repartidor |
+| `UNEXPECTED_FILE_FIELD` | 400 | El archivo vino en un campo distinto de `document` o `proof` |
 | `INVALID_MOCK_AMOUNT` | 400 | Cantidad de mocks inválida, negativa, mayor a 100 o incoherente |
 | `ROUTE_NOT_FOUND` | 404 | La ruta no existe |
 | `USER_NOT_FOUND` | 404 | Usuario inexistente |
@@ -321,6 +396,8 @@ Todos los errores salen de **un único lugar**: el middleware global `src/middle
 | `DELIVERY_ALREADY_ASSIGNED` | 409 | La entrega ya no está `pending` (ya tiene repartidor) |
 | `ORDER_NOT_DELIVERABLE` | 409 | El pedido no está `created` (por ejemplo, está cancelado o ya asignado) |
 | `MOCK_GENERATION_ERROR` | 500 | Falló la inserción de mocks en MongoDB |
+| `FILE_TOO_LARGE` | 413 | El archivo supera los 5 MB |
+| `FILE_UPLOAD_ERROR` | 500 | No se pudo guardar el archivo en disco |
 | `DATABASE_ERROR` | 500 | MongoDB inaccesible |
 | `INTERNAL_SERVER_ERROR` | 500 | Error inesperado |
 
@@ -478,6 +555,7 @@ El script `pretest` ejecuta `npm install --include=dev` antes de cada `npm test`
 | `mocks.test.js` | Mocks | Las 8 rutas de vista previa y sus alias, seed simple y completo (verificando relaciones en la base); cantidades inválidas |
 | `logger.test.js` | Logger | `GET /api/loggerTest` |
 | `docs.test.js` | Swagger y errores generales | `/api/docs` y `/api/docs.json`, ruta inexistente, JSON mal formado en todos los endpoints con body |
+| `uploads.test.js` | Carga de archivos | Documento PDF y licencia PNG (carpeta correcta y archivo en disco), comprobante con el pedido `in_transit` (pasa a `delivered`) y su reemplazo (borra el anterior); sin archivo, formato no permitido, más de 5 MB, campo equivocado, tipo de documento inválido, entidad inexistente, estado no válido y subidas simultáneas, verificando que no queden archivos huérfanos |
 
 **Tests unitarios** (`tests/unit/`, sin base de datos): reglas de negocio de los services con repositories falsos (inyectados por constructor), configuración, constantes, diccionario de errores, middlewares, logger y generadores de mocks.
 
