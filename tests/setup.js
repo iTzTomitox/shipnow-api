@@ -15,6 +15,11 @@ process.env.MONGODB_URI ??= 'mongodb://127.0.0.1:27017/shipnow_test'
 const TEST_UPLOADS_DIR = path.join(os.tmpdir(), 'shipnow-test-uploads')
 process.env.UPLOADS_DIR = TEST_UPLOADS_DIR
 
+// Datos del MongoDB de testing en el mismo disco que el proyecto (dentro de node_modules,
+// ignorado por git): los tests no dependen del espacio libre en la carpeta temporal del sistema.
+// MongoDB se niega a crear índices con menos de 500 MB libres.
+const TEST_DB_PATH = path.resolve('node_modules', '.cache', 'mongodb-memory-server', `test-db-${process.pid}`)
+
 let mongoServer
 
 // Root hooks: corren UNA sola vez para toda la suite.
@@ -23,13 +28,21 @@ export const mochaHooks = {
   async beforeAll() {
     this.timeout(120000) // la primera vez descarga el binario de MongoDB
     await fs.rm(TEST_UPLOADS_DIR, { recursive: true, force: true }) // arranca limpia
-    mongoServer = await MongoMemoryServer.create()
+    await fs.mkdir(TEST_DB_PATH, { recursive: true })
+
+    mongoServer = await MongoMemoryServer.create({ instance: { dbPath: TEST_DB_PATH } })
     await mongoose.connect(mongoServer.getUri())
+
+    // Crea los índices (email único, una entrega por pedido) ANTES de los tests.
+    // Si MongoDB no puede crearlos, la suite corta acá con el motivo real,
+    // en vez de fallar después en tests de concurrencia.
+    await mongoose.syncIndexes()
   },
 
   async afterAll() {
     await mongoose.disconnect()
-    await mongoServer?.stop()
+    await mongoServer?.stop({ doCleanup: true, force: true })
+    await fs.rm(TEST_DB_PATH, { recursive: true, force: true }) // no deja datos de prueba
     await fs.rm(TEST_UPLOADS_DIR, { recursive: true, force: true }) // no deja archivos de prueba
   }
 }
