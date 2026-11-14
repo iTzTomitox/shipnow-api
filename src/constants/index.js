@@ -56,3 +56,25 @@ export const LOG_LEVELS = Object.freeze({
   http: 4,
   debug: 5
 })
+
+export const DOCUMENT_TYPES = Object.freeze({
+  USER_DOCUMENT: 'user_document',
+  DRIVER_LICENSE: 'driver_license',
+  DELIVERY_PROOF: 'delivery_proof'
+})
+
+// Subcarpeta dentro de la carpeta de uploads según el tipo de documento
+export const UPLOAD_FOLDERS = Object.freeze({
+  [DOCUMENT_TYPES.USER_DOCUMENT]: 'documents',
+  [DOCUMENT_TYPES.DRIVER_LICENSE]: 'licenses',
+  [DOCUMENT_TYPES.DELIVERY_PROOF]: 'proofs'
+})
+
+// Formatos aceptados: mimetype → extensión con la que se guarda el archivo
+export const ALLOWED_FILE_TYPES = Object.freeze({
+  'application/pdf': '.pdf',
+  'image/jpeg': '.jpg',
+  'image/png': '.png'
+})
+
+export const MAX_FILE_SIZE_MB = 5

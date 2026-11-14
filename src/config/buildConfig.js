@@ -34,12 +34,16 @@ export const buildConfig = (env) => {
       `LOG_LEVEL inválido: "${env.LOG_LEVEL}". Valores válidos: ${VALID_LOG_LEVELS.join(', ')}`
     )
   }
+  
+  // UPLOADS_DIR es opcional: carpeta donde se guardan los archivos subidos
+  const uploadsDir = env.UPLOADS_DIR?.trim() || 'uploads'
 
   // Object.freeze: nadie puede modificar la config en runtime
   return Object.freeze({
     port,
     mongoUri: env.MONGODB_URI,
     nodeEnv: env.NODE_ENV,
-    logLevel
+    logLevel,
+    uploadsDir
   })
 }

@@ -15,8 +15,14 @@ describe('buildConfig', () => {
       port: 3000,
       mongoUri: validEnv.MONGODB_URI,
       nodeEnv: 'test',
-      logLevel: 'debug'
+      logLevel: 'debug',
+      uploadsDir: 'uploads'
     })
+  })
+
+  it('UPLOADS_DIR por defecto es uploads y acepta otra carpeta', () => {
+    expect(buildConfig(validEnv).uploadsDir).to.equal('uploads')
+    expect(buildConfig({ ...validEnv, UPLOADS_DIR: '/tmp/files' }).uploadsDir).to.equal('/tmp/files')
   })
 
   it('devuelve un objeto congelado (inmutable)', () => {

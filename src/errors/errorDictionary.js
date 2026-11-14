@@ -37,6 +37,15 @@ export const ERRORS = Object.freeze({
     message: 'El pedido no admite esta operación de entrega en su estado actual'
   },
 
+  // Archivos
+  FILE_REQUIRED: { statusCode: 400, message: 'Se requiere un archivo' },
+  INVALID_FILE_TYPE: { statusCode: 400, message: 'Tipo de archivo no permitido (se aceptan PDF, JPG y PNG)' },
+  FILE_TOO_LARGE: { statusCode: 413, message: 'El archivo supera el tamaño máximo permitido (5 MB)' },
+  INVALID_DOCUMENT_TYPE: { statusCode: 400, message: 'El tipo de documento no es válido' },
+  UNEXPECTED_FILE_FIELD: { statusCode: 400, message: 'El archivo se envió en un campo no esperado' },
+  FILE_UPLOAD_ERROR: { statusCode: 500, message: 'No se pudo guardar el archivo' },
+
+
   // Mocks
   INVALID_MOCK_AMOUNT: {
     statusCode: 400,
