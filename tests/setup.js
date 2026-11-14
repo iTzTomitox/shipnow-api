@@ -1,4 +1,3 @@
-// Se ejecuta ANTES de toda la suite (lo carga .mocharc.json).
 import os from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
@@ -12,7 +11,7 @@ process.env.PORT ??= '3001'
 process.env.MONGODB_URI ??= 'mongodb://127.0.0.1:27017/shipnow_test'
 
 // Los archivos que suben los tests van a una carpeta temporal del sistema, nunca a uploads/
-const TEST_UPLOADS_DIR = path.join(os.tmpdir(), 'shipnow-test-uploads')
+const TEST_UPLOADS_DIR = path.resolve('node_modules', '.cache', 'shipnow-test-uploads')
 process.env.UPLOADS_DIR = TEST_UPLOADS_DIR
 
 // Datos del MongoDB de testing en el mismo disco que el proyecto (dentro de node_modules,
