@@ -136,7 +136,46 @@ components:
               example: ana@test.com
             role:
               $ref: '#/components/schemas/UserRole'
+            documents:
+              type: array
+              description: Documentos subidos (solo metadatos; el archivo vive en disco)
+              items:
+                $ref: '#/components/schemas/FileMetadata'
         - $ref: '#/components/schemas/Timestamps'
+
+    # ---------- Archivos ----------
+    DocumentType:
+      type: string
+      enum: [user_document, driver_license, delivery_proof]
+
+    FileMetadata:
+      type: object
+      description: Metadatos de un archivo subido. En MongoDB se guarda solo esto, nunca el archivo.
+      required: [originalName, fileName, path, mimeType, size, type, uploadedAt]
+      properties:
+        originalName:
+          type: string
+          description: Nombre con el que lo envió el cliente (solo informativo)
+          example: licencia.pdf
+        fileName:
+          type: string
+          description: Nombre generado por el servidor con el que se guardó en disco
+          example: 1794627076851-b5984307-90f0-4d24-adbf-dd263f3ee54a.pdf
+        path:
+          type: string
+          example: uploads/licenses/1794627076851-b5984307-90f0-4d24-adbf-dd263f3ee54a.pdf
+        mimeType:
+          type: string
+          enum: [application/pdf, image/jpeg, image/png]
+        size:
+          type: integer
+          description: Tamaño en bytes (máximo 5 MB)
+          example: 24533
+        type:
+          $ref: '#/components/schemas/DocumentType'
+        uploadedAt:
+          type: string
+          format: date-time
 
     UserInput:
       type: object
@@ -330,6 +369,11 @@ components:
           $ref: '#/components/schemas/OrderStatus'
         priority:
           $ref: '#/components/schemas/Priority'
+        proof:
+          description: Comprobante de entrega (solo metadatos), null hasta que se carga
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/FileMetadata'
         createdAt:
           type: string
           format: date-time
@@ -722,6 +766,47 @@ components:
         status: error
         error: DATABASE_ERROR
         message: Error al acceder a la base de datos
+    FileRequired:
+      summary: FILE_REQUIRED
+      value:
+        status: error
+        error: FILE_REQUIRED
+        message: Se requiere un archivo
+        details: 'Campo de archivo esperado: document'
+    InvalidFileType:
+      summary: INVALID_FILE_TYPE
+      value:
+        status: error
+        error: INVALID_FILE_TYPE
+        message: Tipo de archivo no permitido (se aceptan PDF, JPG y PNG)
+        details: 'Formato recibido: text/plain'
+    FileTooLarge:
+      summary: FILE_TOO_LARGE
+      value:
+        status: error
+        error: FILE_TOO_LARGE
+        message: El archivo supera el tamaño máximo permitido (5 MB)
+        details: 'Máximo: 5 MB'
+    InvalidDocumentType:
+      summary: INVALID_DOCUMENT_TYPE
+      value:
+        status: error
+        error: INVALID_DOCUMENT_TYPE
+        message: El tipo de documento no es válido
+        details: 'Valores permitidos: user_document, driver_license'
+    UnexpectedFileField:
+      summary: UNEXPECTED_FILE_FIELD
+      value:
+        status: error
+        error: UNEXPECTED_FILE_FIELD
+        message: El archivo se envió en un campo no esperado
+        details: 'Campo recibido: archivo'
+    FileUploadError:
+      summary: FILE_UPLOAD_ERROR
+      value:
+        status: error
+        error: FILE_UPLOAD_ERROR
+        message: No se pudo guardar el archivo
     InternalServerError:
       summary: INTERNAL_SERVER_ERROR
       value:

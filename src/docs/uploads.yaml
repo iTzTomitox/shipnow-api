@@ -1,0 +1,200 @@
+# Carga de archivos (multipart/form-data). Los endpoints aparecen en Swagger UI
+# dentro de sus módulos (Users y Orders) por su tag.
+components:
+  responses:
+    UploadServerError:
+      description: No se pudo guardar el archivo en disco, error inesperado o base de datos inaccesible
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            FILE_UPLOAD_ERROR:
+              $ref: '#/components/examples/FileUploadError'
+            INTERNAL_SERVER_ERROR:
+              $ref: '#/components/examples/InternalServerError'
+            DATABASE_ERROR:
+              $ref: '#/components/examples/DatabaseError'
+    FileTooLarge:
+      description: El archivo supera los 5 MB
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            FILE_TOO_LARGE:
+              $ref: '#/components/examples/FileTooLarge'
+
+paths:
+  /api/users/{uid}/documents:
+    parameters:
+      - $ref: '#/components/parameters/UserId'
+    post:
+      tags: [Users]
+      summary: Subir un documento del usuario
+      description: |
+        Recibe el archivo como multipart/form-data en el campo "document" (PDF, JPG o PNG, máximo 5 MB).
+        El campo "type" es opcional: user_document (por defecto) o driver_license (solo para usuarios con
+        rol driver). El archivo se guarda en uploads/documents o uploads/licenses con un nombre generado
+        por el servidor; en MongoDB se guardan solo sus metadatos. Si la petición falla después de recibir
+        el archivo (usuario inexistente, tipo inválido), el archivo se borra del disco.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [document]
+              properties:
+                document:
+                  type: string
+                  format: binary
+                  description: Archivo PDF, JPG o PNG de hasta 5 MB
+                type:
+                  type: string
+                  enum: [user_document, driver_license]
+                  default: user_document
+            encoding:
+              document:
+                contentType: application/pdf, image/jpeg, image/png
+      responses:
+        '200':
+          description: Documento cargado (devuelve el usuario con su lista de documentos)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/User'
+        '400':
+          description: |
+            Falta el archivo (FILE_REQUIRED), formato no permitido (INVALID_FILE_TYPE), el archivo vino
+            en otro campo (UNEXPECTED_FILE_FIELD) o el tipo de documento no es válido para este usuario
+            (INVALID_DOCUMENT_TYPE)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FILE_REQUIRED:
+                  $ref: '#/components/examples/FileRequired'
+                INVALID_FILE_TYPE:
+                  $ref: '#/components/examples/InvalidFileType'
+                UNEXPECTED_FILE_FIELD:
+                  $ref: '#/components/examples/UnexpectedFileField'
+                INVALID_DOCUMENT_TYPE:
+                  $ref: '#/components/examples/InvalidDocumentType'
+                LICENCIA_SIN_ROL_DRIVER:
+                  summary: INVALID_DOCUMENT_TYPE (licencia para un usuario que no es repartidor)
+                  value:
+                    status: error
+                    error: INVALID_DOCUMENT_TYPE
+                    message: El tipo de documento no es válido
+                    details: Solo un usuario con rol driver puede cargar una licencia
+        '404':
+          description: El usuario no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                USER_NOT_FOUND:
+                  $ref: '#/components/examples/UserNotFound'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+        '500':
+          $ref: '#/components/responses/UploadServerError'
+
+  /api/orders/{oid}/proof:
+    parameters:
+      - $ref: '#/components/parameters/OrderId'
+    post:
+      tags: [Orders]
+      summary: Subir el comprobante de entrega
+      description: |
+        Recibe el archivo como multipart/form-data en el campo "proof" (PDF, JPG o PNG, máximo 5 MB).
+        Solo con el pedido in_transit (el pedido pasa a delivered) o delivered (reemplaza el comprobante
+        anterior y borra su archivo). Se guarda en uploads/proofs; en MongoDB, solo los metadatos.
+        Si la petición falla después de recibir el archivo, el archivo se borra del disco.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [proof]
+              properties:
+                proof:
+                  type: string
+                  format: binary
+                  description: Archivo PDF, JPG o PNG de hasta 5 MB
+            encoding:
+              proof:
+                contentType: application/pdf, image/jpeg, image/png
+      responses:
+        '200':
+          description: Comprobante cargado (devuelve el pedido en estado delivered con su comprobante)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/OrderDetail'
+        '400':
+          description: Falta el archivo, formato no permitido o el archivo vino en otro campo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                FILE_REQUIRED:
+                  summary: FILE_REQUIRED
+                  value:
+                    status: error
+                    error: FILE_REQUIRED
+                    message: Se requiere un archivo
+                    details: 'Campo de archivo esperado: proof'
+                INVALID_FILE_TYPE:
+                  $ref: '#/components/examples/InvalidFileType'
+                UNEXPECTED_FILE_FIELD:
+                  $ref: '#/components/examples/UnexpectedFileField'
+        '404':
+          description: El pedido no existe
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ORDER_NOT_FOUND:
+                  $ref: '#/components/examples/OrderNotFound'
+        '409':
+          description: El pedido no está in_transit ni delivered, o su estado cambió mientras se procesaba
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                ORDER_NOT_DELIVERABLE:
+                  summary: ORDER_NOT_DELIVERABLE
+                  value:
+                    status: error
+                    error: ORDER_NOT_DELIVERABLE
+                    message: El pedido no admite esta operación de entrega en su estado actual
+                    details: El comprobante se carga con el pedido in_transit o delivered (está created)
+                INVALID_STATUS_TRANSITION:
+                  summary: INVALID_STATUS_TRANSITION (el estado cambió en el medio)
+                  value:
+                    status: error
+                    error: INVALID_STATUS_TRANSITION
+                    message: El pedido no puede pasar a ese estado desde su estado actual
+                    details: El estado del pedido cambió mientras se procesaba la solicitud
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
+        '500':
+          $ref: '#/components/responses/UploadServerError'
