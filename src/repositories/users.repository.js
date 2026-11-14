@@ -53,5 +53,13 @@ export default class UsersRepository {
     if (!mongoose.isValidObjectId(id)) return null
     return this.model.findByIdAndDelete(id, { projection: PROJECTION }).lean()
   }
+  
+  // Agrega un documento a la lista con $push: una sola operación atómica
+  async addDocument(id, document) {
+    if (!mongoose.isValidObjectId(id)) return null
+    return this.model
+      .findByIdAndUpdate(id, { $push: { documents: document } }, { returnDocument: 'after', projection: PROJECTION })
+      .lean()
+  }
 }
 export const usersRepository = new UsersRepository(UserModel)

@@ -1,5 +1,6 @@
 import mongoose from 'mongoose'
 import { ORDER_STATUS, DELIVERY_PRIORITY } from '../constants/index.js'
+import fileMetadataSchema from './fileMetadata.schema.js'
 
 const { ObjectId } = mongoose.Schema.Types
 
@@ -34,7 +35,8 @@ const orderSchema = new mongoose.Schema(
       type: String,
       enum: Object.values(DELIVERY_PRIORITY),
       default: DELIVERY_PRIORITY.NORMAL
-    }
+        },
+    proof: { type: fileMetadataSchema, default: null } // comprobante de entrega (solo metadatos)
   },
   { timestamps: true }
 )

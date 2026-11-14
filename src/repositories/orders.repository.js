@@ -64,6 +64,20 @@ export default class OrdersRepository {
       .populate('customer', CUSTOMER_FIELDS)
       .lean()
   }
+  
+  // Guarda el comprobante solo si el pedido sigue en `fromStatus`, y en la misma
+  // operación lo pasa a `toStatus` (escritura condicional y atómica)
+  async setProof(id, fromStatus, proof, toStatus) {
+    if (!mongoose.isValidObjectId(id)) return null
+    return this.model
+      .findOneAndUpdate(
+        { _id: id, status: fromStatus },
+        { $set: { proof, status: toStatus } },
+        { returnDocument: 'after', runValidators: true, projection: PROJECTION }
+      )
+      .populate('customer', CUSTOMER_FIELDS)
+      .lean()
+  }
 }
 
 // Instancia lista para usar (la clase sigue exportada para los tests)
