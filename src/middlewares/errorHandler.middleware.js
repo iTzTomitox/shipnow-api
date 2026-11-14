@@ -1,4 +1,5 @@
 import AppError from '../errors/AppError.js'
+import { MAX_FILE_SIZE_MB } from '../constants/index.js'
 
 // Traduce cualquier error a un AppError del diccionario
 export const toAppError = (err) => {
@@ -18,9 +19,23 @@ export const toAppError = (err) => {
     const fields = Object.keys(err.keyValue ?? {}).join(', ')
     return new AppError('DUPLICATE_RESOURCE', `Valor duplicado en: ${fields}`)
   }
+  
+  // Errores de Multer (carga de archivos)
+  if (err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return new AppError('FILE_TOO_LARGE', `Máximo: ${MAX_FILE_SIZE_MB} MB`)
+    }
+    if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.code === 'LIMIT_FILE_COUNT') {
+      return new AppError('UNEXPECTED_FILE_FIELD', `Campo recibido: ${err.field}`)
+    }
+    return new AppError('VALIDATION_ERROR', err.message)
+  }
 
   // MongoDB caído o inaccesible (MongoServerError, MongooseServerSelectionError, ...)
   if (err.name?.startsWith('Mongo')) return new AppError('DATABASE_ERROR', err.message)
+    
+  // Falla del sistema de archivos al guardar un upload (permisos, disco lleno)
+  if (err.syscall) return new AppError('FILE_UPLOAD_ERROR', err.message)
 
   // Cualquier otra cosa es inesperada
   return new AppError('INTERNAL_SERVER_ERROR', err.message)

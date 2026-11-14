@@ -1,4 +1,5 @@
 import { expect } from 'chai'
+import multer from 'multer'
 import AppError from '../../src/errors/AppError.js'
 import { createErrorHandler } from '../../src/middlewares/errorHandler.middleware.js'
 import { notFound } from '../../src/middlewares/notFound.middleware.js'
@@ -93,6 +94,25 @@ describe('middlewares', () => {
       expect(logger.calls[0].level).to.equal('error')
       expect(logger.calls[0].message).to.match(/INTERNAL_SERVER_ERROR en GET \/api\/test: x is undefined/)
       expect(logger.calls[0].message).to.include('TypeError') // el stack viaja en el log
+    })
+    
+    it('Multer: archivo demasiado grande → 413 FILE_TOO_LARGE', () => {
+      const res = run(devHandler, new multer.MulterError('LIMIT_FILE_SIZE', 'document'))
+      expect(res.statusCode).to.equal(413)
+      expect(res.body.error).to.equal('FILE_TOO_LARGE')
+    })
+
+    it('Multer: archivo en un campo no esperado → 400 UNEXPECTED_FILE_FIELD con el campo recibido', () => {
+      const res = run(devHandler, new multer.MulterError('LIMIT_UNEXPECTED_FILE', 'archivo'))
+      expect(res.statusCode).to.equal(400)
+      expect(res.body).to.include({ error: 'UNEXPECTED_FILE_FIELD', details: 'Campo recibido: archivo' })
+    })
+
+    it('falla del disco al guardar un upload → 500 FILE_UPLOAD_ERROR', () => {
+      const err = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES', syscall: 'open' })
+      const res = run(devHandler, err)
+      expect(res.statusCode).to.equal(500)
+      expect(res.body.error).to.equal('FILE_UPLOAD_ERROR')
     })
   })
 
