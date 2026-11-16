@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import OrderModel from '../models/order.model.js'
 
 const PROJECTION = '-__v' // nunca exponemos el campo interno de versión
-const DEFAULT_SORT = { createdAt: -1 } // más nuevos primero
+const DEFAULT_SORT = { createdAt: -1, _id: -1 } // más nuevos primero (_id desempata: páginas estables)
 const CUSTOMER_FIELDS = 'firstName lastName email' // lo único que se expone del cliente
 
 // Convierte un documento de Mongoose en objeto plano sin __v
@@ -17,17 +17,24 @@ export default class OrdersRepository {
     this.model = model
   }
 
-  // Filtros opcionales por estado y por cliente; el service decide cuáles usa
-  async findAll({ status, customer } = {}) {
-    if (customer && !mongoose.isValidObjectId(customer)) return []
+  // Filtros opcionales por estado y por cliente; el service decide cuáles usa.
+  // Devuelve una página ({ docs }) y el total de documentos que cumplen el filtro
+  async findAll({ status, customer } = {}, { page = 1, limit = 10 } = {}) {
+    if (customer && !mongoose.isValidObjectId(customer)) return { docs: [], total: 0 }
     const filter = {}
     if (status) filter.status = status
     if (customer) filter.customer = customer
-    return this.model
-      .find(filter, PROJECTION)
-      .sort(DEFAULT_SORT)
-      .populate('customer', CUSTOMER_FIELDS)
-      .lean()
+    const [docs, total] = await Promise.all([
+      this.model
+        .find(filter, PROJECTION)
+        .sort(DEFAULT_SORT)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('customer', CUSTOMER_FIELDS)
+        .lean(),
+      this.model.countDocuments(filter)
+    ])
+    return { docs, total }
   }
 
   async findById(id) {
