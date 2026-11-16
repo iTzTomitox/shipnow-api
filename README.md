@@ -53,7 +53,7 @@ npm test
 | `LOG_LEVEL` | Nivel mínimo de logs (opcional): `fatal`, `error`, `warning`, `info`, `http` o `debug`. Por defecto `debug` fuera de producción e `info` en producción | `debug` |
 | `UPLOADS_DIR` | Carpeta donde se guardan los archivos subidos (opcional, por defecto `uploads`) | `uploads` |
 
-`PORT`, `MONGODB_URI` y `NODE_ENV` son obligatorias; `LOG_LEVEL` es opcional.. La configuración se valida al arrancar (`src/config/buildConfig.js`): si falta alguna o tiene un valor inválido, la app **no arranca** y muestra un error descriptivo. Por ejemplo:
+`PORT`, `MONGODB_URI` y `NODE_ENV` son obligatorias; `LOG_LEVEL` y `UPLOADS_DIR` son opcionales. La configuración se valida al arrancar (`src/config/buildConfig.js`): si falta alguna o tiene un valor inválido, la app **no arranca** y muestra un error descriptivo. Por ejemplo:
 
 ```
 Error: Faltan variables de entorno críticas: MONGODB_URI. Revisá tu archivo .env (el modelo está en .env.example)
@@ -424,6 +424,7 @@ Todos los errores salen de **un único lugar**: el middleware global `src/middle
 | `ORDER_NOT_DELIVERABLE` | 409 | El pedido no está `created` (por ejemplo, está cancelado o ya asignado) |
 | `MOCK_GENERATION_ERROR` | 500 | Falló la inserción de mocks en MongoDB |
 | `FILE_TOO_LARGE` | 413 | El archivo supera los 5 MB |
+| `PAYLOAD_TOO_LARGE` | 413 | El body JSON supera los 100 KB |
 | `FILE_UPLOAD_ERROR` | 500 | No se pudo guardar el archivo en disco |
 | `SERVICE_UNAVAILABLE` | 503 | Health check sin conexión con MongoDB |
 | `DATABASE_ERROR` | 500 | MongoDB inaccesible |
@@ -593,6 +594,17 @@ El script `pretest` ejecuta `npm install --include=dev` antes de cada `npm test`
 - **Errores:** `expectError()` verifica el status HTTP, `status: "error"`, el código interno y su mensaje exacto, comparándolos con el diccionario de errores.
 - **Coherencia con Swagger:** cada respuesta de error documentada en `src/docs/*.yaml` tiene un test que la produce (los 500 no se fuerzan, porque requieren tirar la base).
 - **Datos controlados y limpieza:** cada test crea sus propios datos por la API (`tests/functional/helpers.js`) y la base se vacía con `beforeEach(clearDatabase)`. Los tests no dependen del orden ni del estado previo, y la suite pasa dos veces seguidas sin limpiar nada a mano.
+
+## Rendimiento y robustez
+
+| Medida | Qué resuelve |
+|---|---|
+| **Paginación con tope de 100** | Ningún listado devuelve la colección completa (ver [Paginación](#paginación-de-los-listados)) |
+| **Índices de los listados** | Cada listado filtrado tiene un índice compuesto `filtro + createdAt + _id` (por ejemplo `{ status: 1, createdAt: -1, _id: -1 }` en pedidos). MongoDB encuentra la página por el índice, sin recorrer la colección ni ordenar en memoria |
+| **Consultas livianas** | `.lean()` devuelve objetos planos (sin la sobrecarga de los documentos de Mongoose), la proyección excluye `__v` y los `populate` traen solo los campos necesarios |
+| **Página y total en paralelo** | Cada listado hace la consulta de la página y el `countDocuments` con `Promise.all` |
+| **Límite del body JSON (100 KB)** | Un body más grande se corta antes de parsearlo y responde 413 `PAYLOAD_TOO_LARGE` (los archivos tienen su propio límite de 5 MB) |
+| **Apagado ordenado** | Con `SIGTERM` (lo manda `docker stop`) o `SIGINT` (Ctrl+C), el servidor deja de aceptar conexiones, termina las requests en curso, cierra MongoDB y recién ahí sale. Si tarda más de 10 segundos, fuerza la salida |
 
 ## Notas
 
