@@ -16,6 +16,10 @@ const productSchema = new mongoose.Schema(
   { timestamps: true } // agrega createdAt y updatedAt
 )
 
+// Índices de los listados: filtro + orden de la paginación (más nuevos primero).
+// MongoDB encuentra la página sin recorrer la colección entera ni ordenar en memoria
+productSchema.index({ status: 1, createdAt: -1, _id: -1 }) // GET /api/products (filtra por status available)
+
 const ProductModel = mongoose.model('Product', productSchema)
 
 export default ProductModel
