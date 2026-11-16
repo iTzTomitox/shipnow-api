@@ -164,6 +164,33 @@ Aclaraciones para probar desde Swagger UI:
 
 Todas las respuestas exitosas tienen la forma `{ "status": "success", "payload": ... }`. Los errores siguen el formato descrito en [Manejo de errores](#manejo-de-errores).
 
+### Paginación de los listados
+
+Los cuatro listados (`GET /api/products`, `/api/users`, `/api/orders` y `/api/deliveries`) están paginados, así nunca devuelven la colección completa. Se combinan con los filtros de cada uno.
+
+| Query | Por defecto | Reglas |
+|---|---|---|
+| `page` | `1` | Entero mayor o igual a 1 |
+| `limit` | `10` | Entero entre 1 y 100 |
+
+Un valor inválido responde 400 `VALIDATION_ERROR`. El orden es estable (más nuevos primero, con `_id` de desempate), así ningún elemento se repite ni se saltea entre páginas. `payload` sigue siendo la lista, y los metadatos van al lado:
+
+```json
+{
+  "status": "success",
+  "payload": [],
+  "pagination": { "page": 2, "limit": 10, "total": 37, "totalPages": 4, "hasNextPage": true, "hasPrevPage": true }
+}
+```
+
+### Health check — `/api/health`
+
+| Método | Ruta | Body | Descripción |
+|---|---|---|---|
+| GET | `/api/health` | — | 200 con `status`, `environment`, `uptime` (segundos), `timestamp` y `database`; 503 `SERVICE_UNAVAILABLE` si no hay conexión con MongoDB |
+
+Lo usan Docker y el monitoreo para saber si la API puede atender. No expone información sensible (ni la URI de la base, ni credenciales, ni versiones) y no se registra en los logs de requests, para no llenarlos de ruido.
+
 ### Productos — `/api/products`
 
 | Método | Ruta | Body | Descripción |
@@ -398,6 +425,7 @@ Todos los errores salen de **un único lugar**: el middleware global `src/middle
 | `MOCK_GENERATION_ERROR` | 500 | Falló la inserción de mocks en MongoDB |
 | `FILE_TOO_LARGE` | 413 | El archivo supera los 5 MB |
 | `FILE_UPLOAD_ERROR` | 500 | No se pudo guardar el archivo en disco |
+| `SERVICE_UNAVAILABLE` | 503 | Health check sin conexión con MongoDB |
 | `DATABASE_ERROR` | 500 | MongoDB inaccesible |
 | `INTERNAL_SERVER_ERROR` | 500 | Error inesperado |
 
