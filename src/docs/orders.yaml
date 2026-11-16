@@ -11,9 +11,11 @@ paths:
           description: Filtra por estado del pedido
           schema:
             $ref: '#/components/schemas/OrderStatus'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: Lista de pedidos, los más nuevos primero
+          description: Una página de pedidos, los más nuevos primero
           content:
             application/json:
               schema:
@@ -25,8 +27,10 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/OrderDetail'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
         '400':
-          description: Estado inválido en el filtro
+          description: Estado inválido en el filtro, o page/limit inválidos
           content:
             application/json:
               schema:
@@ -34,6 +38,8 @@ paths:
               examples:
                 INVALID_ORDER_STATUS:
                   $ref: '#/components/examples/InvalidOrderStatus'
+                VALIDATION_ERROR:
+                  $ref: '#/components/examples/InvalidPagination'
         '500':
           $ref: '#/components/responses/ServerError'
     post:

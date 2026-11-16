@@ -3,8 +3,9 @@ import { ordersService } from '../services/orders.service.js'
 export const getOrders = async (req, res, next) => {
   try {
     // filtro opcional: /api/orders?status=created
-    const orders = await ordersService.getAll({ status: req.query.status })
-    res.status(200).json({ status: 'success', payload: orders })
+    const { status, page, limit } = req.query
+    const { docs, pagination } = await ordersService.getAll({ status, page, limit })
+    res.status(200).json({ status: 'success', payload: docs, pagination })
   } catch (error) {
     next(error)
   }

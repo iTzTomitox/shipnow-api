@@ -3,8 +3,9 @@ import { usersService } from '../services/users.service.js'
 export const getUsers = async (req, res, next) => {
   try {
     // filtro opcional: /api/users?role=driver
-    const users = await usersService.getAll({ role: req.query.role })
-    res.status(200).json({ status: 'success', payload: users })
+    const { role, page, limit } = req.query
+    const { docs, pagination } = await usersService.getAll({ role, page, limit })
+    res.status(200).json({ status: 'success', payload: docs, pagination })
   } catch (error) {
     next(error)
   }

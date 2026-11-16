@@ -13,6 +13,7 @@ import { productsRepository } from '../repositories/products.repository.js'
 import { deliveriesRepository } from '../repositories/deliveries.repository.js'
 import logger from '../config/logger.js'
 import { fileStorage, buildFileMetadata } from '../utils/files.js'
+import { parsePagination, buildPaginationMeta } from '../utils/pagination.js'
 
 const VALID_STATUSES = Object.values(ORDER_STATUS)
 const VALID_PRIORITIES = Object.values(DELIVERY_PRIORITY)
@@ -70,9 +71,12 @@ export default class OrdersService {
     this.files = files
   }
 
-  async getAll({ status } = {}) {
+  // Listado paginado, con filtro opcional por estado
+  async getAll({ status, page, limit } = {}) {
     if (status !== undefined) assertValidStatus(status)
-    return this.ordersRepository.findAll({ status })
+    const pagination = parsePagination({ page, limit })
+    const { docs, total } = await this.ordersRepository.findAll({ status }, pagination)
+    return { docs, pagination: buildPaginationMeta(pagination, total) }
   }
 
   async getById(id) {

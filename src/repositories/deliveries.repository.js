@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import DeliveryModel from '../models/delivery.model.js'
 
 const PROJECTION = '-__v' // nunca exponemos el campo interno de versión
-const DEFAULT_SORT = { createdAt: -1 } // más nuevas primero
+const DEFAULT_SORT = { createdAt: -1, _id: -1 } // más nuevas primero (_id desempata: páginas estables)
 const ORDER_FIELDS = 'status total deliveryAddress priority' // resumen del pedido
 const DRIVER_FIELDS = 'firstName lastName email' // lo único que se expone del repartidor
 
@@ -18,17 +18,24 @@ export default class DeliveriesRepository {
   }
 
   // Filtros opcionales por estado y por repartidor
-  async findAll({ status, driver } = {}) {
-    if (driver && !mongoose.isValidObjectId(driver)) return []
+  // Una página del listado + el total que cumple el filtro (las dos consultas en paralelo)
+  async findAll({ status, driver } = {}, { page = 1, limit = 10 } = {}) {
+    if (driver && !mongoose.isValidObjectId(driver)) return { docs: [], total: 0 }
     const filter = {}
     if (status) filter.status = status
     if (driver) filter.driver = driver
-    return this.model
-      .find(filter, PROJECTION)
-      .sort(DEFAULT_SORT)
-      .populate('order', ORDER_FIELDS)
-      .populate('driver', DRIVER_FIELDS)
-      .lean()
+    const [docs, total] = await Promise.all([
+      this.model
+        .find(filter, PROJECTION)
+        .sort(DEFAULT_SORT)
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('order', ORDER_FIELDS)
+        .populate('driver', DRIVER_FIELDS)
+        .lean(),
+      this.model.countDocuments(filter)
+    ])
+    return { docs, total }
   }
 
   async findById(id) {

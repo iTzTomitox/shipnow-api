@@ -10,9 +10,11 @@ paths:
           description: Filtra por rol (por ejemplo driver para listar repartidores)
           schema:
             $ref: '#/components/schemas/UserRole'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: Lista de usuarios, los más nuevos primero
+          description: Una página de usuarios, los más nuevos primero
           content:
             application/json:
               schema:
@@ -24,8 +26,10 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/User'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
         '400':
-          description: Rol inválido en el filtro
+          description: Rol inválido en el filtro, o page/limit inválidos
           content:
             application/json:
               schema:
@@ -33,6 +37,8 @@ paths:
               examples:
                 INVALID_USER_ROLE:
                   $ref: '#/components/examples/InvalidUserRole'
+                VALIDATION_ERROR:
+                  $ref: '#/components/examples/InvalidPagination'
         '500':
           $ref: '#/components/responses/ServerError'
     post:

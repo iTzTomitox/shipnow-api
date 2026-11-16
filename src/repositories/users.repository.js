@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import UserModel from '../models/user.model.js'
 
 const PROJECTION = '-__v' // nunca exponemos el campo interno de versión
-const DEFAULT_SORT = { createdAt: -1 } // más nuevos primero
+const DEFAULT_SORT = { createdAt: -1, _id: -1 } // más nuevos primero (_id desempata: páginas estables)
 
 export default class UsersRepository {
   // Inyección de dependencias: recibe el modelo por constructor
@@ -11,9 +11,14 @@ export default class UsersRepository {
   }
 
   // Filtro opcional por rol; el service decide si lo usa
-  async findAll({ role } = {}) {
+  // Una página del listado + el total que cumple el filtro (las dos consultas en paralelo)
+  async findAll({ role } = {}, { page = 1, limit = 10 } = {}) {
     const filter = role ? { role } : {}
-    return this.model.find(filter, PROJECTION).sort(DEFAULT_SORT).lean()
+    const [docs, total] = await Promise.all([
+      this.model.find(filter, PROJECTION).sort(DEFAULT_SORT).skip((page - 1) * limit).limit(limit).lean(),
+      this.model.countDocuments(filter)
+    ])
+    return { docs, total }
   }
 
   async findById(id) {

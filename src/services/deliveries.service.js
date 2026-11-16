@@ -4,6 +4,7 @@ import { deliveriesRepository } from '../repositories/deliveries.repository.js'
 import { ordersRepository } from '../repositories/orders.repository.js'
 import { usersRepository } from '../repositories/users.repository.js'
 import logger from '../config/logger.js'
+import { parsePagination, buildPaginationMeta } from '../utils/pagination.js'
 
 const VALID_STATUSES = Object.values(DELIVERY_STATUS)
 
@@ -17,11 +18,14 @@ export default class DeliveriesService {
     this.usersRepository = usersRepository
   }
 
-  async getAll({ status, driver } = {}) {
+  // Listado paginado, con filtros opcionales por estado y repartidor
+  async getAll({ status, driver, page, limit } = {}) {
     if (status !== undefined && !VALID_STATUSES.includes(status)) {
       throw new AppError('INVALID_DELIVERY_STATUS', `Valores permitidos: ${VALID_STATUSES.join(', ')}`)
     }
-    return this.deliveriesRepository.findAll({ status, driver })
+    const pagination = parsePagination({ page, limit })
+    const { docs, total } = await this.deliveriesRepository.findAll({ status, driver }, pagination)
+    return { docs, pagination: buildPaginationMeta(pagination, total) }
   }
 
   async getById(id) {

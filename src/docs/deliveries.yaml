@@ -17,9 +17,11 @@ paths:
           description: Filtra por id del repartidor (un id con formato inválido devuelve una lista vacía)
           schema:
             type: string
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: Lista de entregas, las más nuevas primero
+          description: Una página de entregas, las más nuevas primero
           content:
             application/json:
               schema:
@@ -31,8 +33,10 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/DeliveryDetail'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
         '400':
-          description: Estado inválido en el filtro
+          description: Estado inválido en el filtro, o page/limit inválidos
           content:
             application/json:
               schema:
@@ -40,6 +44,8 @@ paths:
               examples:
                 INVALID_DELIVERY_STATUS:
                   $ref: '#/components/examples/InvalidDeliveryStatus'
+                VALIDATION_ERROR:
+                  $ref: '#/components/examples/InvalidPagination'
         '500':
           $ref: '#/components/responses/ServerError'
     post:

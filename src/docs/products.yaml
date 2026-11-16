@@ -12,9 +12,11 @@ paths:
           schema:
             type: string
             enum: ['true', 'false']
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: Lista de productos, los más nuevos primero
+          description: Una página de productos, los más nuevos primero
           content:
             application/json:
               schema:
@@ -26,6 +28,17 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/Product'
+                      pagination:
+                        $ref: '#/components/schemas/Pagination'
+        '400':
+          description: page o limit inválidos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                VALIDATION_ERROR:
+                  $ref: '#/components/examples/InvalidPagination'
         '500':
           $ref: '#/components/responses/ServerError'
     post:

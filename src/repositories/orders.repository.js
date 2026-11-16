@@ -77,7 +77,7 @@ export default class OrdersRepository {
       )
       .populate('customer', CUSTOMER_FIELDS)
       .lean()
-  }
+  } 
 }
 
 // Instancia lista para usar (la clase sigue exportada para los tests)

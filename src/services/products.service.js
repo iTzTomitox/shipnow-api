@@ -1,6 +1,7 @@
 import { PRODUCT_STATUS } from '../constants/index.js'
 import AppError from '../errors/AppError.js'
 import { productsRepository } from '../repositories/products.repository.js'
+import { parsePagination, buildPaginationMeta } from '../utils/pagination.js'
 
 // Regla de negocio: el estado depende del stock, nunca lo decide el cliente
 export const statusFromStock = (stock) =>
@@ -41,9 +42,12 @@ export default class ProductsService {
     this.repository = repository
   }
 
-  async getAll({ includeOutOfStock = false } = {}) {
-    if (includeOutOfStock) return this.repository.findAll()
-    return this.repository.findAll({ status: PRODUCT_STATUS.AVAILABLE })
+  // Listado paginado. Por defecto solo los disponibles (regla de negocio)
+  async getAll({ includeOutOfStock = false, page, limit } = {}) {
+    const pagination = parsePagination({ page, limit })
+    const filter = includeOutOfStock ? {} : { status: PRODUCT_STATUS.AVAILABLE }
+    const { docs, total } = await this.repository.findAll(filter, pagination)
+    return { docs, pagination: buildPaginationMeta(pagination, total) }
   }
 
   async getById(id) {

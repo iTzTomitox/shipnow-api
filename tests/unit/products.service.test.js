@@ -8,7 +8,7 @@ const createFakeRepo = (overrides = {}) => {
   const calls = {}
   return {
     calls,
-    findAll: async (args) => { calls.findAll = args; return [] },
+    findAll: async (args) => { calls.findAll = args; return { docs: [], total: 0 } },
     findById: async () => null,
     create: async (data) => { calls.create = data; return { _id: 'p1', ...data } },
     updateById: async (id, data) => { calls.updateById = data; return { _id: id, ...data } },
@@ -38,7 +38,7 @@ describe('ProductsService', () => {
     it('con includeOutOfStock no filtra por status', async () => {
       const repo = createFakeRepo()
       await new ProductsService(repo).getAll({ includeOutOfStock: true })
-      expect(repo.calls.findAll).to.equal(undefined)
+      expect(repo.calls.findAll).to.deep.equal({}) // filtro vacío: todos los productos
     })
   })
 

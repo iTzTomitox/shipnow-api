@@ -4,8 +4,9 @@ export const getProducts = async (req, res, next) => {
   try {
     // query string siempre llega como texto: comparamos contra 'true'
     const includeOutOfStock = req.query.includeOutOfStock === 'true'
-    const products = await productsService.getAll({ includeOutOfStock })
-    res.status(200).json({ status: 'success', payload: products })
+    const { page, limit } = req.query
+    const { docs, pagination } = await productsService.getAll({ includeOutOfStock, page, limit })
+    res.status(200).json({ status: 'success', payload: docs, pagination })
   } catch (error) {
     next(error)
   }

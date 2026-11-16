@@ -3,6 +3,7 @@ import AppError from '../errors/AppError.js'
 import { usersRepository } from '../repositories/users.repository.js'
 import { fileStorage, buildFileMetadata } from '../utils/files.js'
 import logger from '../config/logger.js'
+import { parsePagination, buildPaginationMeta } from '../utils/pagination.js'
 
 // Tipos de documento que se pueden cargar a un usuario (delivery_proof es de pedidos)
 const USER_DOCUMENT_TYPES = [DOCUMENT_TYPES.USER_DOCUMENT, DOCUMENT_TYPES.DRIVER_LICENSE]
@@ -51,11 +52,14 @@ export default class UsersService {
     this.files = files
   }
 
-  async getAll({ role } = {}) {
+  // Listado paginado, con filtro opcional por rol
+  async getAll({ role, page, limit } = {}) {
     if (role !== undefined && !VALID_ROLES.includes(role)) {
       throw new AppError('INVALID_USER_ROLE', `Valores permitidos: ${VALID_ROLES.join(', ')}`)
     }
-    return this.repository.findAll({ role })
+    const pagination = parsePagination({ page, limit })
+    const { docs, total } = await this.repository.findAll({ role }, pagination)
+    return { docs, pagination: buildPaginationMeta(pagination, total) }
   }
 
   async getById(id) {

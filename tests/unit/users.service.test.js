@@ -7,7 +7,7 @@ const createFakeRepo = (overrides = {}) => {
   const calls = {}
   return {
     calls,
-    findAll: async (args) => { calls.findAll = args; return [] },
+    findAll: async (args) => { calls.findAll = args; return { docs: [], total: 0 } },
     findById: async () => null,
     findByEmail: async () => null, // por defecto el email está libre
     create: async (data) => { calls.create = data; return { _id: 'u1', ...data } },

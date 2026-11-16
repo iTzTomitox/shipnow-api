@@ -3,9 +3,9 @@ import { deliveriesService } from '../services/deliveries.service.js'
 export const getDeliveries = async (req, res, next) => {
   try {
     // filtros opcionales: ?status=pending&driver=ID
-    const { status, driver } = req.query
-    const deliveries = await deliveriesService.getAll({ status, driver })
-    res.status(200).json({ status: 'success', payload: deliveries })
+    const { status, driver, page, limit } = req.query
+    const { docs, pagination } = await deliveriesService.getAll({ status, driver, page, limit })
+    res.status(200).json({ status: 'success', payload: docs, pagination })
   } catch (error) {
     next(error)
   }

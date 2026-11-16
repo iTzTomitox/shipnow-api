@@ -78,3 +78,10 @@ export const ALLOWED_FILE_TYPES = Object.freeze({
 })
 
 export const MAX_FILE_SIZE_MB = 5
+
+// Paginación de los listados: valores por defecto y tope de resultados por página
+export const PAGINATION = Object.freeze({
+  DEFAULT_PAGE: 1,
+  DEFAULT_LIMIT: 10,
+  MAX_LIMIT: 100
+})
