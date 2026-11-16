@@ -21,6 +21,7 @@ const swaggerOptions = {
     servers: [{ url: `http://localhost:${config.port}`, description: 'Servidor local' }],
     // Orden y descripción de los grupos en Swagger UI
     tags: [
+      { name: 'Health', description: 'Estado de la API y de su conexión con MongoDB' },
       { name: 'Users', description: 'Usuarios con rol admin, user (cliente) o driver (repartidor)' },
       { name: 'Products', description: 'Catálogo; el estado se calcula a partir del stock' },
       { name: 'Orders', description: 'Pedidos, transiciones de estado y tracking' },

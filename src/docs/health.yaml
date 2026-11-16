@@ -1,0 +1,61 @@
+paths:
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Estado de salud de la API
+      description: |
+        Pensado para Docker, balanceadores y monitoreo. Responde 200 si la API está levantada
+        y conectada a MongoDB, y 503 si no puede hablar con la base. No expone información
+        sensible (ni URIs, ni credenciales, ni versiones). No se registra en los logs de requests.
+      responses:
+        '200':
+          description: API y base de datos operativas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessResponse'
+                  - type: object
+                    properties:
+                      payload:
+                        $ref: '#/components/schemas/Health'
+        '503':
+          description: La API está levantada pero no tiene conexión con MongoDB
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                SERVICE_UNAVAILABLE:
+                  summary: SERVICE_UNAVAILABLE
+                  value:
+                    status: error
+                    error: SERVICE_UNAVAILABLE
+                    message: El servicio no está disponible en este momento
+                    details: 'database: disconnected'
+
+components:
+  schemas:
+    Health:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok]
+          example: ok
+        environment:
+          type: string
+          enum: [development, test, production]
+          example: production
+        uptime:
+          type: integer
+          description: Segundos desde que arrancó el proceso
+          example: 3600
+        timestamp:
+          type: string
+          format: date-time
+          example: '2026-11-20T15:30:00.000Z'
+        database:
+          type: string
+          enum: [connected]
+          example: connected

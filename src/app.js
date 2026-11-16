@@ -7,6 +7,7 @@ import ordersRouter from './routes/orders.router.js'
 import deliveriesRouter from './routes/deliveries.router.js'
 import mocksRouter from './routes/mocks.router.js'
 import loggerRouter from './routes/logger.router.js'
+import healthRouter from './routes/health.router.js'
 import swaggerUi from 'swagger-ui-express'
 import { swaggerSpecs } from './docs/swagger.config.js'
 import { requestLogger } from './middlewares/requestLogger.middleware.js'
@@ -14,7 +15,12 @@ import { notFound } from './middlewares/notFound.middleware.js'
 import { createErrorHandler } from './middlewares/errorHandler.middleware.js'
 
 const app = express()
-app.use(requestLogger) // primero: registra todas las peticiones
+
+// Health check antes del request logger: Docker o el monitoreo lo consultan cada
+// pocos segundos y llenarían los logs de ruido
+app.use('/api/health', healthRouter)
+
+app.use(requestLogger) // registra todas las demás peticiones
 app.use(express.json())
 
 app.use('/api/products', productsRouter)

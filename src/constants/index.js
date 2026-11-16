@@ -85,3 +85,11 @@ export const PAGINATION = Object.freeze({
   DEFAULT_LIMIT: 10,
   MAX_LIMIT: 100
 })
+
+// Estados de la conexión de Mongoose (mongoose.connection.readyState) → nombre legible
+export const DB_CONNECTION_STATES = Object.freeze({
+  0: 'disconnected',
+  1: 'connected',
+  2: 'connecting',
+  3: 'disconnecting'
+})

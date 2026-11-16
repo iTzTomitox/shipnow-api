@@ -54,6 +54,7 @@ export const ERRORS = Object.freeze({
   MOCK_GENERATION_ERROR: { statusCode: 500, message: 'No se pudieron generar los datos de prueba' },
 
   // Sistema
+  SERVICE_UNAVAILABLE: { statusCode: 503, message: 'El servicio no está disponible en este momento' },
   DATABASE_ERROR: { statusCode: 500, message: 'Error al acceder a la base de datos' },
   INTERNAL_SERVER_ERROR: { statusCode: 500, message: 'Error interno del servidor' }
 })
