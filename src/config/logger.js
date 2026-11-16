@@ -23,7 +23,10 @@ const line = winston.format.printf(({ timestamp, level, message, ...meta }) => {
 const timestamp = winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' })
 
 const fileFormat = winston.format.combine(timestamp, line)
-const consoleFormat = winston.format.combine(timestamp, winston.format.colorize(), line)
+// Colores solo en desarrollo: en producción la consola la leen herramientas (docker logs),
+// y los códigos de color ensuciarían el texto
+const consoleFormat = (colors) =>
+  colors ? winston.format.combine(timestamp, winston.format.colorize(), line) : fileFormat
 
 // Archivo rotado por día: logs/AAAA-MM-DD/<name>.log
 const rotatingFile = (name, level) =>
@@ -40,7 +43,10 @@ const rotatingFile = (name, level) =>
 export const resolveLoggerOptions = ({ nodeEnv, logLevel }) => ({
   level: logLevel,
   silent: nodeEnv === 'test',
-  console: nodeEnv === 'development',
+  // Consola también en producción: en un contenedor es el canal de logs (docker logs lee
+  // stdout) y los archivos de adentro se pierden si se borra el contenedor
+  console: nodeEnv !== 'test',
+  colors: nodeEnv === 'development',
   files: nodeEnv === 'test'
     ? []
     : [
@@ -52,7 +58,7 @@ export const resolveLoggerOptions = ({ nodeEnv, logLevel }) => ({
 export const createLogger = (settings) => {
   const options = resolveLoggerOptions(settings)
   const transports = options.files.map(({ name, level }) => rotatingFile(name, level))
-  if (options.console) transports.push(new winston.transports.Console({ format: consoleFormat }))
+  if (options.console) transports.push(new winston.transports.Console({ format: consoleFormat(options.colors) }))
 
   return winston.createLogger({
     levels: LOG_LEVELS,

@@ -6,7 +6,7 @@ paths:
       description: |
         Herramienta de validación, NO es una funcionalidad de negocio. No se monta en producción.
         Genera un log de prueba en cada nivel. Resultado esperado:
-        - Consola (solo desarrollo): los 6 niveles.
+        - Consola (en desarrollo, nivel debug): los 6 niveles.
         - logs/AAAA-MM-DD/combined.log: fatal, error, warning e info.
         - logs/AAAA-MM-DD/error.log: solo fatal y error.
       responses:

@@ -4,12 +4,13 @@ import { LOG_LEVELS } from '../../src/constants/index.js'
 
 describe('logger', () => {
   describe('resolveLoggerOptions', () => {
-    it('development: desde debug, con consola y los dos archivos', () => {
+    it('development: desde debug, con consola con colores y los dos archivos', () => {
       const options = resolveLoggerOptions({ nodeEnv: 'development', logLevel: 'debug' })
       expect(options).to.deep.equal({
         level: 'debug',
         silent: false,
         console: true,
+        colors: true,
         files: [
           { name: 'error', level: 'error' },
           { name: 'combined', level: 'info' }
@@ -17,10 +18,9 @@ describe('logger', () => {
       })
     })
 
-    it('production: desde info y SIN consola', () => {
+    it('production: desde info, con consola sin colores (docker logs) y los dos archivos', () => {
       const options = resolveLoggerOptions({ nodeEnv: 'production', logLevel: 'info' })
-      expect(options.level).to.equal('info')
-      expect(options.console).to.equal(false)
+      expect(options).to.include({ level: 'info', console: true, colors: false })
       expect(options.files).to.have.lengthOf(2)
     })
 
