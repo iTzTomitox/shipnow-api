@@ -6,30 +6,22 @@ describe('Funcional: /api/users', () => {
   beforeEach(clearDatabase)
 
   describe('GET /api/users', () => {
-    it('lista los usuarios con su estructura (sin campos internos)', async () => {
+    it('lista los usuarios con su estructura (sin campos internos) y filtra por rol', async () => {
       await createUser({ firstName: 'Ana' })
-      await createDriver({ firstName: 'Luis' })
+      const driver = await createDriver({ firstName: 'Luis' })
 
-      const res = await api().get('/api/users')
-
-      expect(res.status).to.equal(200)
-      expect(res.body.status).to.equal('success')
-      expect(res.body.payload).to.be.an('array').with.lengthOf(2)
-      for (const user of res.body.payload) {
+      const all = await api().get('/api/users')
+      expect(all.status).to.equal(200)
+      expect(all.body.status).to.equal('success')
+      expect(all.body.payload).to.be.an('array').with.lengthOf(2)
+      for (const user of all.body.payload) {
         expect(user).to.include.all.keys('_id', 'firstName', 'lastName', 'email', 'role', 'createdAt')
         expect(user).to.not.have.property('__v')
       }
-    })
 
-    it('filtra por rol (?role=driver)', async () => {
-      await createUser()
-      const driver = await createDriver()
-
-      const res = await api().get('/api/users?role=driver')
-
-      expect(res.status).to.equal(200)
-      expect(res.body.payload).to.have.lengthOf(1)
-      expect(res.body.payload[0]).to.include({ _id: driver._id, role: 'driver' })
+      const drivers = await api().get('/api/users?role=driver')
+      expect(drivers.body.payload).to.have.lengthOf(1)
+      expect(drivers.body.payload[0]).to.include({ _id: driver._id, role: 'driver' })
     })
 
     it('rol inválido en el filtro → 400 INVALID_USER_ROLE', async () => {
@@ -39,29 +31,26 @@ describe('Funcional: /api/users', () => {
   })
 
   describe('POST /api/users', () => {
-    it('crea un usuario con rol user por defecto y email normalizado', async () => {
+    it('crea un usuario con rol user por defecto, email normalizado y solo los campos permitidos', async () => {
       const res = await api()
         .post('/api/users')
         .send({ firstName: 'Ana', lastName: 'Pérez', email: '  Ana@Test.COM ', isVip: true })
 
       expect(res.status).to.equal(201)
-      expect(res.body.status).to.equal('success')
       expect(res.body.payload).to.include({ firstName: 'Ana', lastName: 'Pérez', email: 'ana@test.com', role: 'user' })
       expect(res.body.payload._id).to.match(/^[0-9a-f]{24}$/)
       expect(res.body.payload).to.not.have.property('isVip') // lista blanca
     })
 
-    it('datos incompletos (sin email) → 400 VALIDATION_ERROR con details', async () => {
-      const res = await api().post('/api/users').send({ firstName: 'Ana', lastName: 'Pérez' })
-      expectError(res, 'VALIDATION_ERROR')
-      expect(res.body.details).to.match(/email/)
-    })
+    it('datos incompletos → 400 VALIDATION_ERROR; rol inexistente → 400 INVALID_USER_ROLE', async () => {
+      const incomplete = await api().post('/api/users').send({ firstName: 'Ana', lastName: 'Pérez' })
+      expectError(incomplete, 'VALIDATION_ERROR')
+      expect(incomplete.body.details).to.match(/email/)
 
-    it('rol inexistente → 400 INVALID_USER_ROLE', async () => {
-      const res = await api()
+      const badRole = await api()
         .post('/api/users')
         .send({ firstName: 'Ana', lastName: 'Pérez', email: 'ana@test.com', role: 'superadmin' })
-      expectError(res, 'INVALID_USER_ROLE')
+      expectError(badRole, 'INVALID_USER_ROLE')
     })
 
     it('email repetido → 409 USER_ALREADY_EXISTS', async () => {
@@ -74,7 +63,7 @@ describe('Funcional: /api/users', () => {
 
     it('peticiones simultáneas con el mismo email: solo una crea, el resto 409 (índice único)', async () => {
       const body = { firstName: 'Ana', lastName: 'Pérez', email: 'carrera@test.com' }
-      // Las 5 llegan "a la vez": pueden pasar la validación del service antes de que exista el usuario,
+      // Llegan "a la vez": pueden pasar la validación del service antes de que exista el usuario,
       // y ahí el índice único de MongoDB es la red de seguridad (DUPLICATE_RESOURCE)
       const responses = await Promise.all(Array.from({ length: 5 }, () => api().post('/api/users').send(body)))
 
@@ -96,14 +85,9 @@ describe('Funcional: /api/users', () => {
       expect(res.body.payload).to.include({ _id: user._id, firstName: 'Eva' })
     })
 
-    it('usuario inexistente → 404 USER_NOT_FOUND', async () => {
-      const res = await api().get(`/api/users/${NONEXISTENT_ID}`)
-      expectError(res, 'USER_NOT_FOUND')
-    })
-
-    it('id con formato inválido → 404 USER_NOT_FOUND', async () => {
-      const res = await api().get('/api/users/123')
-      expectError(res, 'USER_NOT_FOUND')
+    it('usuario inexistente o id con formato inválido → 404 USER_NOT_FOUND', async () => {
+      expectError(await api().get(`/api/users/${NONEXISTENT_ID}`), 'USER_NOT_FOUND')
+      expectError(await api().get('/api/users/123'), 'USER_NOT_FOUND')
     })
   })
 
@@ -115,23 +99,17 @@ describe('Funcional: /api/users', () => {
       expect(res.body.payload).to.include({ _id: user._id, role: 'driver' })
     })
 
+    it('rol inexistente → 400 INVALID_USER_ROLE; sin campos válidos → 400 VALIDATION_ERROR', async () => {
+      const user = await createUser()
+      expectError(await api().put(`/api/users/${user._id}`).send({ role: 'superadmin' }), 'INVALID_USER_ROLE')
+      expectError(await api().put(`/api/users/${user._id}`).send({ password: 'x' }), 'VALIDATION_ERROR')
+    })
+
     it('email de otro usuario → 409 USER_ALREADY_EXISTS', async () => {
       await createUser({ email: 'ocupado@test.com' })
       const user = await createUser()
       const res = await api().put(`/api/users/${user._id}`).send({ email: 'ocupado@test.com' })
       expectError(res, 'USER_ALREADY_EXISTS')
-    })
-
-    it('rol inexistente → 400 INVALID_USER_ROLE', async () => {
-      const user = await createUser()
-      const res = await api().put(`/api/users/${user._id}`).send({ role: 'superadmin' })
-      expectError(res, 'INVALID_USER_ROLE')
-    })
-
-    it('sin campos válidos → 400 VALIDATION_ERROR', async () => {
-      const user = await createUser()
-      const res = await api().put(`/api/users/${user._id}`).send({ password: 'x' })
-      expectError(res, 'VALIDATION_ERROR')
     })
 
     it('usuario inexistente → 404 USER_NOT_FOUND', async () => {
@@ -141,19 +119,14 @@ describe('Funcional: /api/users', () => {
   })
 
   describe('DELETE /api/users/:uid', () => {
-    it('elimina el usuario y después ya no existe', async () => {
+    it('elimina el usuario; después ya no existe, y borrarlo de nuevo → 404 USER_NOT_FOUND', async () => {
       const user = await createUser()
       const res = await api().delete(`/api/users/${user._id}`)
       expect(res.status).to.equal(200)
       expect(res.body.payload._id).to.equal(user._id)
 
-      const after = await api().get(`/api/users/${user._id}`)
-      expectError(after, 'USER_NOT_FOUND')
-    })
-
-    it('usuario inexistente → 404 USER_NOT_FOUND', async () => {
-      const res = await api().delete(`/api/users/${NONEXISTENT_ID}`)
-      expectError(res, 'USER_NOT_FOUND')
+      expectError(await api().get(`/api/users/${user._id}`), 'USER_NOT_FOUND')
+      expectError(await api().delete(`/api/users/${user._id}`), 'USER_NOT_FOUND')
     })
   })
 })

@@ -33,26 +33,18 @@ describe('Funcional: /api/deliveries', () => {
       expect(res.body.payload._id).to.match(/^[0-9a-f]{24}$/)
     })
 
-    it('sin order → 400 VALIDATION_ERROR', async () => {
-      const res = await api().post('/api/deliveries').send({})
-      expectError(res, 'VALIDATION_ERROR')
+    it('sin order → 400 VALIDATION_ERROR; pedido inexistente → 404 ORDER_NOT_FOUND', async () => {
+      expectError(await api().post('/api/deliveries').send({}), 'VALIDATION_ERROR')
+      expectError(await api().post('/api/deliveries').send({ order: NONEXISTENT_ID }), 'ORDER_NOT_FOUND')
     })
 
-    it('pedido inexistente → 404 ORDER_NOT_FOUND', async () => {
-      const res = await api().post('/api/deliveries').send({ order: NONEXISTENT_ID })
-      expectError(res, 'ORDER_NOT_FOUND')
-    })
-
-    it('pedido cancelado → 409 ORDER_NOT_DELIVERABLE', async () => {
-      await api().patch(`/api/orders/${order._id}/status`).send({ status: 'cancelled' })
-      const res = await api().post('/api/deliveries').send({ order: order._id })
-      expectError(res, 'ORDER_NOT_DELIVERABLE')
-    })
-
-    it('segunda entrega para el mismo pedido → 409 DELIVERY_ALREADY_EXISTS', async () => {
+    it('segunda entrega → 409 DELIVERY_ALREADY_EXISTS; pedido cancelado → 409 ORDER_NOT_DELIVERABLE', async () => {
       await createDelivery(order)
-      const res = await api().post('/api/deliveries').send({ order: order._id })
-      expectError(res, 'DELIVERY_ALREADY_EXISTS')
+      expectError(await api().post('/api/deliveries').send({ order: order._id }), 'DELIVERY_ALREADY_EXISTS')
+
+      const other = await createOrder({ customer, product: await createProduct() })
+      await api().patch(`/api/orders/${other._id}/status`).send({ status: 'cancelled' })
+      expectError(await api().post('/api/deliveries').send({ order: other._id }), 'ORDER_NOT_DELIVERABLE')
     })
 
     it('peticiones simultáneas para el mismo pedido: solo una crea, el resto 409 (índice único)', async () => {
@@ -68,40 +60,31 @@ describe('Funcional: /api/deliveries', () => {
   })
 
   describe('GET /api/deliveries', () => {
-    it('lista las entregas con el resumen del pedido', async () => {
+    it('lista las entregas con el resumen del pedido y filtra por estado', async () => {
       await createDelivery(order)
       const res = await api().get('/api/deliveries')
       expect(res.status).to.equal(200)
       expect(res.body.payload).to.have.lengthOf(1)
       expect(res.body.payload[0].order).to.include({ _id: order._id, status: 'created' })
       expect(res.body.payload[0]).to.include({ status: 'pending', driver: null })
-    })
 
-    it('filtra por estado (?status=pending)', async () => {
-      await createDelivery(order)
-      const pending = await api().get('/api/deliveries?status=pending')
-      const assigned = await api().get('/api/deliveries?status=assigned')
-      expect(pending.body.payload).to.have.lengthOf(1)
-      expect(assigned.body.payload).to.have.lengthOf(0)
+      expect((await api().get('/api/deliveries?status=pending')).body.payload).to.have.lengthOf(1)
+      expect((await api().get('/api/deliveries?status=assigned')).body.payload).to.have.lengthOf(0)
     })
 
     it('estado inválido en el filtro → 400 INVALID_DELIVERY_STATUS', async () => {
-      const res = await api().get('/api/deliveries?status=lost')
-      expectError(res, 'INVALID_DELIVERY_STATUS')
+      expectError(await api().get('/api/deliveries?status=lost'), 'INVALID_DELIVERY_STATUS')
     })
   })
 
   describe('GET /api/deliveries/:did', () => {
-    it('devuelve la entrega', async () => {
+    it('devuelve la entrega; inexistente → 404 DELIVERY_NOT_FOUND', async () => {
       const delivery = await createDelivery(order)
       const res = await api().get(`/api/deliveries/${delivery._id}`)
       expect(res.status).to.equal(200)
       expect(res.body.payload).to.include({ _id: delivery._id, status: 'pending' })
-    })
 
-    it('entrega inexistente → 404 DELIVERY_NOT_FOUND', async () => {
-      const res = await api().get(`/api/deliveries/${NONEXISTENT_ID}`)
-      expectError(res, 'DELIVERY_NOT_FOUND')
+      expectError(await api().get(`/api/deliveries/${NONEXISTENT_ID}`), 'DELIVERY_NOT_FOUND')
     })
   })
 
@@ -120,44 +103,30 @@ describe('Funcional: /api/deliveries', () => {
       expect(orderRes.body.payload.status).to.equal('assigned')
     })
 
-    it('sin driver → 400 VALIDATION_ERROR', async () => {
+    it('sin driver o usuario sin rol driver → 400 VALIDATION_ERROR (y el pedido sigue created)', async () => {
       const delivery = await createDelivery(order)
-      const res = await api().patch(`/api/deliveries/${delivery._id}/assign`).send({})
-      expectError(res, 'VALIDATION_ERROR')
-    })
-
-    it('usuario sin rol driver → 400 VALIDATION_ERROR (y el pedido sigue created)', async () => {
-      const delivery = await createDelivery(order)
-      const res = await api().patch(`/api/deliveries/${delivery._id}/assign`).send({ driver: customer._id })
-      expectError(res, 'VALIDATION_ERROR')
+      expectError(await api().patch(`/api/deliveries/${delivery._id}/assign`).send({}), 'VALIDATION_ERROR')
+      expectError(await api().patch(`/api/deliveries/${delivery._id}/assign`).send({ driver: customer._id }), 'VALIDATION_ERROR')
 
       const orderRes = await api().get(`/api/orders/${order._id}`)
       expect(orderRes.body.payload.status).to.equal('created')
     })
 
-    it('repartidor inexistente → 404 USER_NOT_FOUND', async () => {
+    it('repartidor o entrega inexistente → 404 USER_NOT_FOUND / DELIVERY_NOT_FOUND', async () => {
       const delivery = await createDelivery(order)
-      const res = await api().patch(`/api/deliveries/${delivery._id}/assign`).send({ driver: NONEXISTENT_ID })
-      expectError(res, 'USER_NOT_FOUND')
+      expectError(await api().patch(`/api/deliveries/${delivery._id}/assign`).send({ driver: NONEXISTENT_ID }), 'USER_NOT_FOUND')
+      expectError(await api().patch(`/api/deliveries/${NONEXISTENT_ID}/assign`).send({ driver: driver._id }), 'DELIVERY_NOT_FOUND')
     })
 
-    it('entrega inexistente → 404 DELIVERY_NOT_FOUND', async () => {
-      const res = await api().patch(`/api/deliveries/${NONEXISTENT_ID}/assign`).send({ driver: driver._id })
-      expectError(res, 'DELIVERY_NOT_FOUND')
-    })
-
-    it('entrega ya asignada → 409 DELIVERY_ALREADY_ASSIGNED', async () => {
+    it('entrega ya asignada → 409 DELIVERY_ALREADY_ASSIGNED; pedido cancelado → 409 ORDER_NOT_DELIVERABLE', async () => {
       const delivery = await createDelivery(order)
       await api().patch(`/api/deliveries/${delivery._id}/assign`).send({ driver: driver._id })
-      const res = await api().patch(`/api/deliveries/${delivery._id}/assign`).send({ driver: driver._id })
-      expectError(res, 'DELIVERY_ALREADY_ASSIGNED')
-    })
+      expectError(await api().patch(`/api/deliveries/${delivery._id}/assign`).send({ driver: driver._id }), 'DELIVERY_ALREADY_ASSIGNED')
 
-    it('pedido cancelado después de crear la entrega → 409 ORDER_NOT_DELIVERABLE', async () => {
-      const delivery = await createDelivery(order)
-      await api().patch(`/api/orders/${order._id}/status`).send({ status: 'cancelled' })
-      const res = await api().patch(`/api/deliveries/${delivery._id}/assign`).send({ driver: driver._id })
-      expectError(res, 'ORDER_NOT_DELIVERABLE')
+      const other = await createOrder({ customer, product: await createProduct() })
+      const otherDelivery = await createDelivery(other)
+      await api().patch(`/api/orders/${other._id}/status`).send({ status: 'cancelled' })
+      expectError(await api().patch(`/api/deliveries/${otherDelivery._id}/assign`).send({ driver: driver._id }), 'ORDER_NOT_DELIVERABLE')
     })
   })
 })

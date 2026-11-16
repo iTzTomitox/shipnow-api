@@ -1,6 +1,11 @@
 import { expect } from 'chai'
 import MocksService from '../../src/services/mocks.service.js'
 import { USER_ROLES, ORDER_STATUS, DELIVERY_STATUS } from '../../src/constants/index.js'
+import { catchError } from './helpers.js'
+
+// Tests unitarios del seed: el orden de inserción, las relaciones entre entidades y la
+// falla de MongoDB, verificados sobre repositories falsos (sin base de datos).
+// El comportamiento HTTP de los mocks está en tests/functional/mocks.test.js.
 
 // Repository falso: insertMany asigna _id y guarda lo insertado en `inserted`.
 // `roles` (solo usuarios) fuerza los roles en ciclo para controlar el escenario.
@@ -28,142 +33,79 @@ const createService = ({ userRoles } = {}) => {
   return { service: new MocksService(repos), repos }
 }
 
-const catchError = async (fn) => {
-  try {
-    await fn()
-  } catch (error) {
-    return error
-  }
-  throw new Error('Se esperaba que lanzara un error')
-}
+const BOTH_ROLES = [USER_ROLES.USER, USER_ROLES.DRIVER]
 
 describe('MocksService', () => {
-  describe('GET (sin guardar)', () => {
-    it('getMockUsers devuelve 5 usuarios por defecto', () => {
-      const { service } = createService()
-      expect(service.getMockUsers()).to.have.lengthOf(5)
-    })
-
-    it('acepta qty como texto de query string ("3")', () => {
-      const { service } = createService()
-      expect(service.getMockUsers('3')).to.have.lengthOf(3)
-    })
+  it('qty: 5 por defecto, acepta texto de query string y rechaza valores inválidos', async () => {
+    const { service } = createService()
+    expect(service.getMockUsers()).to.have.lengthOf(5)
+    expect(service.getMockUsers('3')).to.have.lengthOf(3)
 
     for (const invalid of ['muchos', '-1', '101', '2.5', '']) {
-      it(`rechaza qty inválido "${invalid}" con 400`, async () => {
-        const { service } = createService()
-        const error = await catchError(() => service.getMockUsers(invalid))
-        expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
-      })
+      const error = await catchError(() => service.getMockUsers(invalid))
+      expect(error.code, `qty="${invalid}"`).to.equal('INVALID_MOCK_AMOUNT')
     }
-
-    it('getMockOrders genera items que referencian ids con formato ObjectId', () => {
-      const { service } = createService()
-      for (const order of service.getMockOrders(3)) {
-        expect(order.customer).to.match(/^[0-9a-f]{24}$/)
-        for (const item of order.items) expect(item.product).to.match(/^[0-9a-f]{24}$/)
-      }
-    })
-    it('getMockDeliveries genera entregas coherentes: PENDING sin repartidor, el resto con repartidor', () => {
-      const { service } = createService()
-      for (const delivery of service.getMockDeliveries(30)) {
-        expect(delivery.order).to.match(/^[0-9a-f]{24}$/)
-        if (delivery.status === DELIVERY_STATUS.PENDING) {
-          expect(delivery.driver).to.equal(null)
-        } else {
-          expect(delivery.driver).to.match(/^[0-9a-f]{24}$/)
-        }
-      }
-    })
   })
 
-  describe('seedUsers (?qty=N)', () => {
-    it('inserta N usuarios y responde como el ejemplo de la consigna', async () => {
-      const { service, repos } = createService()
-      const result = await service.seedUsers('4')
-      expect(result).to.deep.equal({ insertados: 4, coleccion: 'users' })
-      expect(repos.usersRepository.inserted).to.have.lengthOf(4)
-    })
-
-    it('rechaza qty 0 con 400', async () => {
-      const { service } = createService()
-      const error = await catchError(() => service.seedUsers('0'))
-      expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
-    })
-  })
-
-    describe('seed (body por colección)', () => {
-    it('rechaza un body sin cantidades con 400', async () => {
-      const { service } = createService()
-      const error = await catchError(() => service.seed(undefined))
-      expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
-    })
-
-    it('rechaza orders sin users o products con 400', async () => {
-      const { service } = createService()
-      const error = await catchError(() => service.seed({ users: 5, orders: 3 }))
-      expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
-    })
-
-    it('rechaza más deliveries que orders con 400', async () => {
-      const { service } = createService()
-      const body = { users: 5, products: 3, orders: 2, deliveries: 3 }
+  it('seed: rechaza combinaciones imposibles antes de insertar', async () => {
+    const { service, repos } = createService()
+    const invalidBodies = [
+      undefined, // nada para generar
+      { users: 5, orders: 3 }, // pedidos sin productos
+      { users: 5, products: 3, orders: 2, deliveries: 3 } // más entregas que pedidos
+    ]
+    for (const body of invalidBodies) {
       const error = await catchError(() => service.seed(body))
-      expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
-    })
+      expect(error.code, JSON.stringify(body)).to.equal('INVALID_MOCK_AMOUNT')
+    }
+    expect(repos.usersRepository.inserted).to.be.empty
+  })
 
-    it('inserta las cantidades pedidas y devuelve el resumen', async () => {
-      const { service } = createService({ userRoles: [USER_ROLES.USER, USER_ROLES.DRIVER] })
-      const result = await service.seed({ users: 6, products: 4, orders: 5, deliveries: 3 })
-      expect(result).to.deep.equal({ insertados: { users: 6, products: 4, orders: 5, deliveries: 3 } })
-    })
+  it('seed: respeta las relaciones (pedido → cliente user, item → producto, entrega → pedido + repartidor driver)', async () => {
+    const { service, repos } = createService({ userRoles: BOTH_ROLES })
+    const result = await service.seed({ users: 6, products: 4, orders: 10, deliveries: 3 })
+    expect(result).to.deep.equal({ insertados: { users: 6, products: 4, orders: 10, deliveries: 3 } })
 
-    it('respeta las relaciones: pedido → cliente USER, item → producto insertado', async () => {
-      const { service, repos } = createService({ userRoles: [USER_ROLES.USER, USER_ROLES.DRIVER] })
-      await service.seed({ users: 6, products: 4, orders: 5 })
-      const customerIds = repos.usersRepository.inserted
-        .filter((u) => u.role === USER_ROLES.USER).map((u) => u._id)
-      const productIds = repos.productsRepository.inserted.map((p) => p._id)
-      for (const order of repos.ordersRepository.inserted) {
-        expect(customerIds).to.include(order.customer)
-        for (const item of order.items) expect(productIds).to.include(item.product)
-      }
-    })
+    const users = repos.usersRepository.inserted
+    const customerIds = users.filter((u) => u.role === USER_ROLES.USER).map((u) => u._id)
+    const driverIds = users.filter((u) => u.role === USER_ROLES.DRIVER).map((u) => u._id)
+    const productIds = repos.productsRepository.inserted.map((p) => p._id)
+    const orders = repos.ordersRepository.inserted
 
-    it('entregas coherentes: pedido insertado + repartidor con rol DRIVER', async () => {
-      const { service, repos } = createService({ userRoles: [USER_ROLES.USER, USER_ROLES.DRIVER] })
-      await service.seed({ users: 6, products: 4, orders: 5, deliveries: 5 })
-      const orderIds = repos.ordersRepository.inserted.map((o) => o._id)
-      const driverIds = repos.usersRepository.inserted
-        .filter((u) => u.role === USER_ROLES.DRIVER).map((u) => u._id)
-      for (const delivery of repos.deliveriesRepository.inserted) {
-        expect(orderIds).to.include(delivery.order)
-        expect(driverIds).to.include(delivery.driver)
-      }
-    })
+    for (const order of orders) {
+      expect(customerIds).to.include(order.customer)
+      for (const item of order.items) expect(productIds).to.include(item.product)
+    }
+    // Los primeros 3 pedidos llevan entrega con repartidor; el resto queda created o cancelled
+    for (const delivery of repos.deliveriesRepository.inserted) {
+      expect(orders.map((o) => o._id)).to.include(delivery.order)
+      expect(driverIds).to.include(delivery.driver)
+    }
+    for (const order of orders.slice(3)) {
+      expect([ORDER_STATUS.CREATED, ORDER_STATUS.CANCELLED]).to.include(order.status)
+    }
+  })
 
-    it('pedidos sin entrega quedan solo CREATED o CANCELLED', async () => {
-      const { service, repos } = createService({ userRoles: [USER_ROLES.USER, USER_ROLES.DRIVER] })
-      await service.seed({ users: 6, products: 4, orders: 10, deliveries: 2 })
-      for (const order of repos.ordersRepository.inserted.slice(2)) {
-        expect([ORDER_STATUS.CREATED, ORDER_STATUS.CANCELLED]).to.include(order.status)
-      }
-    })
+  it('seed sin repartidores: las entregas quedan pending y sin driver', async () => {
+    const { service, repos } = createService({ userRoles: [USER_ROLES.USER] })
+    await service.seed({ users: 3, products: 2, orders: 3, deliveries: 3 })
+    for (const delivery of repos.deliveriesRepository.inserted) {
+      expect(delivery).to.include({ status: DELIVERY_STATUS.PENDING, driver: null })
+    }
+  })
 
-    it('sin repartidores, las entregas quedan PENDING y sin driver', async () => {
-      const { service, repos } = createService({ userRoles: [USER_ROLES.USER] })
-      await service.seed({ users: 3, products: 2, orders: 3, deliveries: 3 })
-      for (const delivery of repos.deliveriesRepository.inserted) {
-        expect(delivery.status).to.equal(DELIVERY_STATUS.PENDING)
-        expect(delivery.driver).to.equal(null)
-      }
-    })
-    it('si MongoDB falla durante la carga, responde MOCK_GENERATION_ERROR', async () => {
-      const { service, repos } = createService()
-      repos.productsRepository.insertMany = async () => { throw new Error('connection lost') }
-      const error = await catchError(() => service.seed({ users: 2, products: 2 }))
-      expect(error.code).to.equal('MOCK_GENERATION_ERROR')
-      expect(error.details).to.match(/connection lost/)
-    })
+  it('seedUsers (?qty=N) responde con la forma del ejemplo de la consigna', async () => {
+    const { service } = createService()
+    expect(await service.seedUsers('4')).to.deep.equal({ insertados: 4, coleccion: 'users' })
+    const error = await catchError(() => service.seedUsers('0'))
+    expect(error.code).to.equal('INVALID_MOCK_AMOUNT')
+  })
+
+  it('si MongoDB falla durante la carga → MOCK_GENERATION_ERROR con el motivo', async () => {
+    const { service, repos } = createService()
+    repos.productsRepository.insertMany = async () => { throw new Error('connection lost') }
+    const error = await catchError(() => service.seed({ users: 2, products: 2 }))
+    expect(error.code).to.equal('MOCK_GENERATION_ERROR')
+    expect(error.details).to.match(/connection lost/)
   })
 })

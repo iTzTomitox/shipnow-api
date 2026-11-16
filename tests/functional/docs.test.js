@@ -1,7 +1,7 @@
 import { expect } from 'chai'
 import { api, expectError } from './helpers.js'
 
-describe('Funcional: documentación y rutas', () => {
+describe('Funcional: documentación y errores generales', () => {
   it('GET /api/docs/ sirve Swagger UI (HTML)', async () => {
     const res = await api().get('/api/docs/')
     expect(res.status).to.equal(200)
@@ -24,23 +24,23 @@ describe('Funcional: documentación y rutas', () => {
     expect(res.body.details).to.equal('GET /api/noexiste')
   })
 
-  // Todos los endpoints que reciben body responden igual ante un JSON roto
-  // (el error lo lanza express.json() antes de llegar a la ruta)
-  const bodyEndpoints = [
-    ['post', '/api/products'],
-    ['put', '/api/products/6ac1b4f2a653ca2ad6719999'],
-    ['post', '/api/users'],
-    ['put', '/api/users/6ac1b4f2a653ca2ad6719999'],
-    ['post', '/api/orders'],
-    ['patch', '/api/orders/6ac1b4f2a653ca2ad6719999/status'],
-    ['post', '/api/deliveries'],
-    ['patch', '/api/deliveries/6ac1b4f2a653ca2ad6719999/assign'],
-    ['post', '/api/mocks/seed']
-  ]
-  for (const [method, path] of bodyEndpoints) {
-    it(`JSON mal formado en ${method.toUpperCase()} ${path} → 400 INVALID_JSON`, async () => {
+  it('JSON mal formado → 400 INVALID_JSON en todos los endpoints que reciben body', async () => {
+    // El error lo lanza express.json() antes de llegar a la ruta: se recorre cada endpoint
+    // documentado con body para confirmar que todos responden con el formato común
+    const bodyEndpoints = [
+      ['post', '/api/products'],
+      ['put', '/api/products/6ac1b4f2a653ca2ad6719999'],
+      ['post', '/api/users'],
+      ['put', '/api/users/6ac1b4f2a653ca2ad6719999'],
+      ['post', '/api/orders'],
+      ['patch', '/api/orders/6ac1b4f2a653ca2ad6719999/status'],
+      ['post', '/api/deliveries'],
+      ['patch', '/api/deliveries/6ac1b4f2a653ca2ad6719999/assign'],
+      ['post', '/api/mocks/seed']
+    ]
+    for (const [method, path] of bodyEndpoints) {
       const res = await api()[method](path).set('Content-Type', 'application/json').send('{"name": ')
       expectError(res, 'INVALID_JSON')
-    })
-  }
+    }
+  })
 })

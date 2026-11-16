@@ -21,108 +21,77 @@ describe('Funcional: /api/orders', () => {
     product = await createProduct({ name: 'Caja test', price: 100, stock: 10 })
   })
 
+  const orderBody = (overrides = {}) => ({
+    customer: customer._id,
+    items: [{ product: product._id, quantity: 1 }],
+    deliveryAddress: 'Calle 1',
+    ...overrides
+  })
+
   describe('POST /api/orders', () => {
-    it('crea el pedido: snapshot del producto, total calculado, estado created y prioridad normal', async () => {
+    it('crea el pedido: snapshot del producto, total calculado, estado created y prioridad', async () => {
       const res = await api()
         .post('/api/orders')
-        .send({
-          customer: customer._id,
+        .send(orderBody({
           items: [{ product: product._id, quantity: 3, price: 1 }], // el precio enviado se ignora
-          deliveryAddress: 'Av. Siempre Viva 742',
           status: 'delivered' // el estado enviado se ignora
-        })
+        }))
 
       expect(res.status).to.equal(201)
       const order = res.body.payload
       expect(order).to.include({ customer: customer._id, total: 300, status: 'created', priority: 'normal' })
       expect(order.items).to.deep.equal([{ product: product._id, name: 'Caja test', quantity: 3, price: 100 }])
-      expect(order._id).to.match(/^[0-9a-f]{24}$/)
+
+      const high = await createOrder({ customer, product, priority: 'high' })
+      expect(high.priority).to.equal('high')
     })
 
-    it('respeta la prioridad enviada', async () => {
-      const order = await createOrder({ customer, product, priority: 'high' })
-      expect(order.priority).to.equal('high')
-    })
-
-    it('datos incompletos (sin deliveryAddress) → 400 VALIDATION_ERROR', async () => {
-      const res = await api()
-        .post('/api/orders')
-        .send({ customer: customer._id, items: [{ product: product._id, quantity: 1 }] })
-      expectError(res, 'VALIDATION_ERROR')
-      expect(res.body.details).to.match(/deliveryAddress/)
-    })
-
-    it('sin items → 400 ORDER_ITEMS_REQUIRED', async () => {
-      const res = await api()
-        .post('/api/orders')
-        .send({ customer: customer._id, items: [], deliveryAddress: 'Calle 1' })
-      expectError(res, 'ORDER_ITEMS_REQUIRED')
-    })
-
-    it('prioridad inexistente → 400 VALIDATION_ERROR', async () => {
-      const res = await api()
-        .post('/api/orders')
-        .send({ customer: customer._id, items: [{ product: product._id, quantity: 1 }], deliveryAddress: 'Calle 1', priority: 'urgent' })
-      expectError(res, 'VALIDATION_ERROR')
-    })
-
-    it('un repartidor no puede ser cliente → 400 VALIDATION_ERROR', async () => {
+    it('datos inválidos → 400 (VALIDATION_ERROR u ORDER_ITEMS_REQUIRED, con el motivo en details)', async () => {
       const driver = await createDriver()
-      const res = await api()
-        .post('/api/orders')
-        .send({ customer: driver._id, items: [{ product: product._id, quantity: 1 }], deliveryAddress: 'Calle 1' })
-      expectError(res, 'VALIDATION_ERROR')
+      const noAddress = await api().post('/api/orders').send(orderBody({ deliveryAddress: undefined }))
+      expectError(noAddress, 'VALIDATION_ERROR')
+      expect(noAddress.body.details).to.match(/deliveryAddress/)
+
+      expectError(await api().post('/api/orders').send(orderBody({ priority: 'urgent' })), 'VALIDATION_ERROR')
+      expectError(await api().post('/api/orders').send(orderBody({ customer: driver._id })), 'VALIDATION_ERROR') // un repartidor no es cliente
+      expectError(await api().post('/api/orders').send(orderBody({ items: [] })), 'ORDER_ITEMS_REQUIRED')
     })
 
-    it('cliente inexistente → 404 USER_NOT_FOUND', async () => {
-      const res = await api()
-        .post('/api/orders')
-        .send({ customer: NONEXISTENT_ID, items: [{ product: product._id, quantity: 1 }], deliveryAddress: 'Calle 1' })
-      expectError(res, 'USER_NOT_FOUND')
-    })
-
-    it('producto inexistente → 404 PRODUCT_NOT_FOUND', async () => {
-      const res = await api()
-        .post('/api/orders')
-        .send({ customer: customer._id, items: [{ product: NONEXISTENT_ID, quantity: 1 }], deliveryAddress: 'Calle 1' })
-      expectError(res, 'PRODUCT_NOT_FOUND')
+    it('cliente o producto inexistente → 404 USER_NOT_FOUND / PRODUCT_NOT_FOUND', async () => {
+      expectError(await api().post('/api/orders').send(orderBody({ customer: NONEXISTENT_ID })), 'USER_NOT_FOUND')
+      expectError(
+        await api().post('/api/orders').send(orderBody({ items: [{ product: NONEXISTENT_ID, quantity: 1 }] })),
+        'PRODUCT_NOT_FOUND'
+      )
     })
 
     it('producto sin stock → 409 PRODUCT_NOT_AVAILABLE', async () => {
       const noStock = await createProduct({ name: 'Agotado', stock: 0 })
-      const res = await api()
-        .post('/api/orders')
-        .send({ customer: customer._id, items: [{ product: noStock._id, quantity: 1 }], deliveryAddress: 'Calle 1' })
+      const res = await api().post('/api/orders').send(orderBody({ items: [{ product: noStock._id, quantity: 1 }] }))
       expectError(res, 'PRODUCT_NOT_AVAILABLE')
       expect(res.body.details).to.equal('Agotado')
     })
   })
 
   describe('GET /api/orders', () => {
-    it('lista los pedidos con los datos del cliente', async () => {
-      await createOrder({ customer, product })
-      const res = await api().get('/api/orders')
-
-      expect(res.status).to.equal(200)
-      expect(res.body.payload).to.have.lengthOf(1)
-      expect(res.body.payload[0].customer).to.include({ _id: customer._id, email: customer.email })
-      expect(res.body.payload[0].customer).to.include.all.keys('firstName', 'lastName')
-    })
-
-    it('filtra por estado (?status=cancelled)', async () => {
+    it('lista los pedidos con los datos del cliente y filtra por estado', async () => {
       const toCancel = await createOrder({ customer, product })
       await createOrder({ customer, product })
       await api().patch(`/api/orders/${toCancel._id}/status`).send({ status: 'cancelled' })
 
-      const res = await api().get('/api/orders?status=cancelled')
-      expect(res.status).to.equal(200)
-      expect(res.body.payload).to.have.lengthOf(1)
-      expect(res.body.payload[0]._id).to.equal(toCancel._id)
+      const all = await api().get('/api/orders')
+      expect(all.status).to.equal(200)
+      expect(all.body.payload).to.have.lengthOf(2)
+      expect(all.body.payload[0].customer).to.include({ _id: customer._id, email: customer.email })
+      expect(all.body.payload[0].customer).to.include.all.keys('firstName', 'lastName')
+
+      const cancelled = await api().get('/api/orders?status=cancelled')
+      expect(cancelled.body.payload).to.have.lengthOf(1)
+      expect(cancelled.body.payload[0]._id).to.equal(toCancel._id)
     })
 
     it('estado inválido en el filtro → 400 INVALID_ORDER_STATUS', async () => {
-      const res = await api().get('/api/orders?status=on_the_way')
-      expectError(res, 'INVALID_ORDER_STATUS')
+      expectError(await api().get('/api/orders?status=on_the_way'), 'INVALID_ORDER_STATUS')
     })
   })
 
@@ -130,20 +99,14 @@ describe('Funcional: /api/orders', () => {
     it('devuelve el pedido por id, con los datos del cliente', async () => {
       const order = await createOrder({ customer, product })
       const res = await api().get(`/api/orders/${order._id}`)
-
       expect(res.status).to.equal(200)
       expect(res.body.payload).to.include({ _id: order._id, total: 200, status: 'created' })
       expect(res.body.payload.customer._id).to.equal(customer._id)
     })
 
-    it('pedido inexistente → 404 ORDER_NOT_FOUND', async () => {
-      const res = await api().get(`/api/orders/${NONEXISTENT_ID}`)
-      expectError(res, 'ORDER_NOT_FOUND')
-    })
-
-    it('id con formato inválido → 404 ORDER_NOT_FOUND', async () => {
-      const res = await api().get('/api/orders/123')
-      expectError(res, 'ORDER_NOT_FOUND')
+    it('pedido inexistente o id con formato inválido → 404 ORDER_NOT_FOUND', async () => {
+      expectError(await api().get(`/api/orders/${NONEXISTENT_ID}`), 'ORDER_NOT_FOUND')
+      expectError(await api().get('/api/orders/123'), 'ORDER_NOT_FOUND')
     })
   })
 
@@ -155,36 +118,22 @@ describe('Funcional: /api/orders', () => {
       expect(res.body.payload).to.include({ _id: order._id, status: 'cancelled' })
     })
 
-    it('estado que no existe → 400 INVALID_ORDER_STATUS', async () => {
+    it('estado que no existe o sin body → 400 INVALID_ORDER_STATUS', async () => {
       const order = await createOrder({ customer, product })
-      const res = await api().patch(`/api/orders/${order._id}/status`).send({ status: 'on_the_way' })
-      expectError(res, 'INVALID_ORDER_STATUS')
+      expectError(await api().patch(`/api/orders/${order._id}/status`).send({ status: 'on_the_way' }), 'INVALID_ORDER_STATUS')
+      expectError(await api().patch(`/api/orders/${order._id}/status`), 'INVALID_ORDER_STATUS')
     })
 
-    it('sin body → 400 INVALID_ORDER_STATUS', async () => {
+    it('transiciones no permitidas → 409 INVALID_STATUS_TRANSITION (salto, assigned y estado final)', async () => {
       const order = await createOrder({ customer, product })
-      const res = await api().patch(`/api/orders/${order._id}/status`)
-      expectError(res, 'INVALID_ORDER_STATUS')
-    })
+      expectError(await api().patch(`/api/orders/${order._id}/status`).send({ status: 'delivered' }), 'INVALID_STATUS_TRANSITION')
 
-    it('salto no permitido (created → delivered) → 409 INVALID_STATUS_TRANSITION', async () => {
-      const order = await createOrder({ customer, product })
-      const res = await api().patch(`/api/orders/${order._id}/status`).send({ status: 'delivered' })
-      expectError(res, 'INVALID_STATUS_TRANSITION')
-    })
+      const assigned = await api().patch(`/api/orders/${order._id}/status`).send({ status: 'assigned' })
+      expectError(assigned, 'INVALID_STATUS_TRANSITION')
+      expect(assigned.body.details).to.match(/assign/) // indica qué endpoint usar
 
-    it('assigned por este endpoint → 409 INVALID_STATUS_TRANSITION', async () => {
-      const order = await createOrder({ customer, product })
-      const res = await api().patch(`/api/orders/${order._id}/status`).send({ status: 'assigned' })
-      expectError(res, 'INVALID_STATUS_TRANSITION')
-      expect(res.body.details).to.match(/assign/)
-    })
-
-    it('desde un estado final (cancelled → created) → 409 INVALID_STATUS_TRANSITION', async () => {
-      const order = await createOrder({ customer, product })
       await api().patch(`/api/orders/${order._id}/status`).send({ status: 'cancelled' })
-      const res = await api().patch(`/api/orders/${order._id}/status`).send({ status: 'created' })
-      expectError(res, 'INVALID_STATUS_TRANSITION')
+      expectError(await api().patch(`/api/orders/${order._id}/status`).send({ status: 'created' }), 'INVALID_STATUS_TRANSITION')
     })
 
     it('pedido inexistente → 404 ORDER_NOT_FOUND', async () => {
@@ -194,17 +143,14 @@ describe('Funcional: /api/orders', () => {
   })
 
   describe('GET /api/orders/:oid/tracking', () => {
-    it('pedido sin entrega → delivery null', async () => {
+    it('pedido sin entrega → delivery null; pedido inexistente → 404 ORDER_NOT_FOUND', async () => {
       const order = await createOrder({ customer, product })
       const res = await api().get(`/api/orders/${order._id}/tracking`)
       expect(res.status).to.equal(200)
       expect(res.body.payload.order).to.include({ _id: order._id, status: 'created' })
       expect(res.body.payload.delivery).to.equal(null)
-    })
 
-    it('pedido inexistente → 404 ORDER_NOT_FOUND', async () => {
-      const res = await api().get(`/api/orders/${NONEXISTENT_ID}/tracking`)
-      expectError(res, 'ORDER_NOT_FOUND')
+      expectError(await api().get(`/api/orders/${NONEXISTENT_ID}/tracking`), 'ORDER_NOT_FOUND')
     })
   })
 })

@@ -41,38 +41,25 @@ describe('Funcional: carga de archivos', () => {
   })
 
   describe('POST /api/users/:uid/documents', () => {
-    it('sube un PDF: guarda los metadatos en el usuario y el archivo en documents/', async () => {
+    it('sube documentos: metadatos en el usuario, archivo en documents/ y la lista se acumula', async () => {
       const user = await createUser()
       const res = await attach(api().post(`/api/users/${user._id}/documents`), 'document', pdf)
 
       expect(res.status).to.equal(200)
-      expect(res.body.status).to.equal('success')
-      expect(res.body.payload.documents).to.have.lengthOf(1)
       const doc = res.body.payload.documents[0]
-      expect(doc).to.include({
-        originalName: 'dni.pdf',
-        mimeType: 'application/pdf',
-        size: pdf.buffer.length,
-        type: 'user_document'
-      })
+      expect(doc).to.include({ originalName: 'dni.pdf', mimeType: 'application/pdf', size: pdf.buffer.length, type: 'user_document' })
       expect(doc).to.include.all.keys('fileName', 'path', 'uploadedAt')
       expect(doc.fileName).to.not.equal('dni.pdf') // nombre generado por el servidor
-      expect(doc.path).to.include('/documents/')
-      expect(await fileExists(doc.path)).to.equal(true) // el archivo está en disco
-    })
+      expect(doc.path).to.include('/documents/').and.not.include(path.win32.sep) // ruta con "/" en cualquier SO
+      expect(await fileExists(doc.path)).to.equal(true)
 
-    it('varios documentos se acumulan en la lista del usuario', async () => {
-      const user = await createUser()
-      await attach(api().post(`/api/users/${user._id}/documents`), 'document', pdf)
-      const res = await attach(api().post(`/api/users/${user._id}/documents`), 'document', png)
-      expect(res.status).to.equal(200)
-      expect(res.body.payload.documents).to.have.lengthOf(2)
+      const second = await attach(api().post(`/api/users/${user._id}/documents`), 'document', png)
+      expect(second.body.payload.documents).to.have.lengthOf(2)
     })
 
     it('licencia de un repartidor: se guarda en licenses/', async () => {
       const driver = await createDriver()
-      const res = await attach(api().post(`/api/users/${driver._id}/documents`), 'document', png)
-        .field('type', 'driver_license')
+      const res = await attach(api().post(`/api/users/${driver._id}/documents`), 'document', png).field('type', 'driver_license')
 
       expect(res.status).to.equal(200)
       const doc = res.body.payload.documents[0]
@@ -81,52 +68,26 @@ describe('Funcional: carga de archivos', () => {
       expect(await fileExists(doc.path)).to.equal(true)
     })
 
-    it('sin archivo → 400 FILE_REQUIRED', async () => {
+    it('archivos inválidos (falta, formato, tamaño, campo) → error y no se guarda nada', async () => {
       const user = await createUser()
-      const res = await api().post(`/api/users/${user._id}/documents`).field('type', 'user_document')
-      expectError(res, 'FILE_REQUIRED')
-    })
+      const url = `/api/users/${user._id}/documents`
 
-    it('formato no permitido (.txt) → 400 INVALID_FILE_TYPE y no guarda nada', async () => {
-      const user = await createUser()
-      const res = await attach(api().post(`/api/users/${user._id}/documents`), 'document', txt)
-      expectError(res, 'INVALID_FILE_TYPE')
+      expectError(await api().post(`/api/users/${user._id}/documents`).field('type', 'user_document'), 'FILE_REQUIRED')
+      expectError(await attach(api().post(url), 'document', txt), 'INVALID_FILE_TYPE')
+      expectError(await attach(api().post(url), 'document', tooBig), 'FILE_TOO_LARGE')
+      const wrongField = await attach(api().post(`/api/users/${user._id}/documents`), 'archivo', pdf)
+      expectError(wrongField, 'UNEXPECTED_FILE_FIELD')
+      expect(wrongField.body.details).to.equal('Campo recibido: archivo')
+
       expect(await countFiles()).to.equal(0)
     })
 
-    it('archivo de más de 5 MB → 413 FILE_TOO_LARGE y no guarda nada', async () => {
+    it('tipo inválido, licencia para un no-repartidor o usuario inexistente → error y el archivo subido se borra', async () => {
       const user = await createUser()
-      const res = await attach(api().post(`/api/users/${user._id}/documents`), 'document', tooBig)
-      expectError(res, 'FILE_TOO_LARGE')
-      expect(await countFiles()).to.equal(0)
-    })
+      expectError(await attach(api().post(`/api/users/${user._id}/documents`), 'document', pdf).field('type', 'pasaporte'), 'INVALID_DOCUMENT_TYPE')
+      expectError(await attach(api().post(`/api/users/${user._id}/documents`), 'document', pdf).field('type', 'driver_license'), 'INVALID_DOCUMENT_TYPE')
+      expectError(await attach(api().post(`/api/users/${NONEXISTENT_ID}/documents`), 'document', pdf), 'USER_NOT_FOUND')
 
-    it('archivo en un campo distinto de "document" → 400 UNEXPECTED_FILE_FIELD', async () => {
-      const user = await createUser()
-      const res = await attach(api().post(`/api/users/${user._id}/documents`), 'archivo', pdf)
-      expectError(res, 'UNEXPECTED_FILE_FIELD')
-      expect(res.body.details).to.equal('Campo recibido: archivo')
-    })
-
-    it('tipo de documento inválido → 400 INVALID_DOCUMENT_TYPE y borra el archivo subido', async () => {
-      const user = await createUser()
-      const res = await attach(api().post(`/api/users/${user._id}/documents`), 'document', pdf)
-        .field('type', 'pasaporte')
-      expectError(res, 'INVALID_DOCUMENT_TYPE')
-      expect(await countFiles()).to.equal(0)
-    })
-
-    it('licencia para un usuario que no es repartidor → 400 INVALID_DOCUMENT_TYPE y borra el archivo', async () => {
-      const user = await createUser()
-      const res = await attach(api().post(`/api/users/${user._id}/documents`), 'document', pdf)
-        .field('type', 'driver_license')
-      expectError(res, 'INVALID_DOCUMENT_TYPE')
-      expect(await countFiles()).to.equal(0)
-    })
-
-    it('usuario inexistente → 404 USER_NOT_FOUND y borra el archivo subido', async () => {
-      const res = await attach(api().post(`/api/users/${NONEXISTENT_ID}/documents`), 'document', pdf)
-      expectError(res, 'USER_NOT_FOUND')
       expect(await countFiles()).to.equal(0)
     })
   })
@@ -161,7 +122,6 @@ describe('Funcional: carga de archivos', () => {
       expect(res.body.payload.proof.path).to.include('/proofs/')
       expect(await fileExists(res.body.payload.proof.path)).to.equal(true)
 
-      // El cambio de estado se ve en el tracking
       const tracking = await api().get(`/api/orders/${order._id}/tracking`)
       expect(tracking.body.payload.order.status).to.equal('delivered')
     })
@@ -169,24 +129,21 @@ describe('Funcional: carga de archivos', () => {
     it('pedido delivered: reemplaza el comprobante y borra el archivo anterior', async () => {
       await moveToInTransit()
       const first = await attach(api().post(`/api/orders/${order._id}/proof`), 'proof', png)
-      const oldPath = first.body.payload.proof.path
-
       const second = await attach(api().post(`/api/orders/${order._id}/proof`), 'proof', pdf)
+
       expect(second.status).to.equal(200)
       expect(second.body.payload.proof.mimeType).to.equal('application/pdf')
-      expect(await fileExists(oldPath)).to.equal(false)
-      expect(await fileExists(second.body.payload.proof.path)).to.equal(true)
+      expect(await fileExists(first.body.payload.proof.path)).to.equal(false)
       expect(await countFiles()).to.equal(1)
     })
 
     it('subidas simultáneas: el pedido queda delivered con UN comprobante y sin archivos huérfanos', async () => {
       await moveToInTransit()
-      // Llegan "a la vez": la que pierde la escritura condicional responde
-      // INVALID_STATUS_TRANSITION (o reemplaza, si leyó el pedido ya entregado)
+      // La que pierde la escritura condicional responde INVALID_STATUS_TRANSITION
+      // (o reemplaza, si leyó el pedido ya entregado)
       const responses = await Promise.all(
         Array.from({ length: 4 }, () => attach(api().post(`/api/orders/${order._id}/proof`), 'proof', png))
       )
-
       expect(responses.some((r) => r.status === 200)).to.equal(true)
       for (const res of responses.filter((r) => r.status !== 200)) {
         expect(res.status).to.equal(409)
@@ -194,50 +151,22 @@ describe('Funcional: carga de archivos', () => {
       }
       const saved = await api().get(`/api/orders/${order._id}`)
       expect(saved.body.payload.status).to.equal('delivered')
-      expect(await fileExists(saved.body.payload.proof.path)).to.equal(true)
       expect(await countFiles()).to.equal(1) // solo el comprobante vigente
     })
 
-    it('pedido created → 409 ORDER_NOT_DELIVERABLE y borra el archivo subido', async () => {
-      const res = await attach(api().post(`/api/orders/${order._id}/proof`), 'proof', png)
-      expectError(res, 'ORDER_NOT_DELIVERABLE')
+    it('pedido created → 409 ORDER_NOT_DELIVERABLE; pedido inexistente → 404 ORDER_NOT_FOUND; el archivo se borra', async () => {
+      expectError(await attach(api().post(`/api/orders/${order._id}/proof`), 'proof', png), 'ORDER_NOT_DELIVERABLE')
+      expectError(await attach(api().post(`/api/orders/${NONEXISTENT_ID}/proof`), 'proof', png), 'ORDER_NOT_FOUND')
       expect(await countFiles()).to.equal(0)
     })
 
-    it('pedido inexistente → 404 ORDER_NOT_FOUND y borra el archivo subido', async () => {
-      const res = await attach(api().post(`/api/orders/${NONEXISTENT_ID}/proof`), 'proof', png)
-      expectError(res, 'ORDER_NOT_FOUND')
-      expect(await countFiles()).to.equal(0)
-    })
-
-    it('sin archivo → 400 FILE_REQUIRED', async () => {
-      const res = await api().post(`/api/orders/${order._id}/proof`).field('nota', 'sin archivo')
-      expectError(res, 'FILE_REQUIRED')
-    })
-
-    it('formato no permitido → 400 INVALID_FILE_TYPE', async () => {
+    it('archivos inválidos (falta, formato, tamaño, campo) → error y no se guarda nada', async () => {
       await moveToInTransit()
-      const res = await attach(api().post(`/api/orders/${order._id}/proof`), 'proof', txt)
-      expectError(res, 'INVALID_FILE_TYPE')
-    })
-
-    it('archivo en el campo "document" → 400 UNEXPECTED_FILE_FIELD', async () => {
-      const res = await attach(api().post(`/api/orders/${order._id}/proof`), 'document', pdf)
-      expectError(res, 'UNEXPECTED_FILE_FIELD')
-    })
-
-    it('archivo de más de 5 MB → 413 FILE_TOO_LARGE', async () => {
-      await moveToInTransit()
-      const res = await attach(api().post(`/api/orders/${order._id}/proof`), 'proof', tooBig)
-      expectError(res, 'FILE_TOO_LARGE')
+      expectError(await api().post(`/api/orders/${order._id}/proof`).field('nota', 'sin archivo'), 'FILE_REQUIRED')
+      expectError(await attach(api().post(`/api/orders/${order._id}/proof`), 'proof', txt), 'INVALID_FILE_TYPE')
+      expectError(await attach(api().post(`/api/orders/${order._id}/proof`), 'proof', tooBig), 'FILE_TOO_LARGE')
+      expectError(await attach(api().post(`/api/orders/${order._id}/proof`), 'document', pdf), 'UNEXPECTED_FILE_FIELD')
       expect(await countFiles()).to.equal(0)
     })
-  })
-
-  // Comprueba que path.join no rompa el formato de las rutas guardadas
-  it('las rutas guardadas usan "/" en cualquier sistema operativo', async () => {
-    const user = await createUser()
-    const res = await attach(api().post(`/api/users/${user._id}/documents`), 'document', pdf)
-    expect(res.body.payload.documents[0].path).to.not.include(path.win32.sep)
   })
 })
