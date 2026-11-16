@@ -1,4 +1,5 @@
 import express from 'express'
+import helmet from 'helmet'
 import config from './config/index.js'
 import logger from './config/logger.js'
 import productsRouter from './routes/products.router.js'
@@ -16,6 +17,16 @@ import { createErrorHandler } from './middlewares/errorHandler.middleware.js'
 import { MAX_JSON_BODY_SIZE } from './constants/index.js'
 
 const app = express()
+
+// Cabeceras de seguridad HTTP (nosniff, frameguard, CSP, etc.). Primero, para que
+// apliquen a todas las respuestas, incluidos los errores y el health check.
+// upgrade-insecure-requests se desactiva: la API puede servirse por HTTP (por ejemplo
+// en Docker en localhost) y forzar HTTPS rompería los recursos de Swagger UI
+app.use(
+  helmet({
+    contentSecurityPolicy: { directives: { upgradeInsecureRequests: null } }
+  })
+)
 
 // Health check antes del request logger: Docker o el monitoreo lo consultan cada
 // pocos segundos y llenarían los logs de ruido
