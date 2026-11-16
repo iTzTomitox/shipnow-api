@@ -1,5 +1,5 @@
 import AppError from '../errors/AppError.js'
-import { MAX_FILE_SIZE_MB } from '../constants/index.js'
+import { MAX_FILE_SIZE_MB, MAX_JSON_BODY_SIZE } from '../constants/index.js'
 
 // Traduce cualquier error a un AppError del diccionario
 export const toAppError = (err) => {
@@ -7,6 +7,9 @@ export const toAppError = (err) => {
 
   // JSON mal formado en el body (lo lanza express.json)
   if (err.type === 'entity.parse.failed') return new AppError('INVALID_JSON')
+
+  // Body más grande que el límite de express.json (sin esto caería como 500)
+  if (err.type === 'entity.too.large') return new AppError('PAYLOAD_TOO_LARGE', `Máximo: ${MAX_JSON_BODY_SIZE}`)
 
   // Validación del esquema de Mongoose (red de seguridad: el service valida antes)
   if (err.name === 'ValidationError' && err.errors) {

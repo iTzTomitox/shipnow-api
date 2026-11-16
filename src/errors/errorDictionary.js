@@ -6,6 +6,7 @@ export const ERRORS = Object.freeze({
   // Generales
   VALIDATION_ERROR: { statusCode: 400, message: 'Los datos enviados no son válidos' },
   INVALID_JSON: { statusCode: 400, message: 'El cuerpo de la petición no es un JSON válido' },
+  PAYLOAD_TOO_LARGE: { statusCode: 413, message: 'El cuerpo de la petición es demasiado grande' },
   DUPLICATE_RESOURCE: { statusCode: 409, message: 'Ya existe un recurso con esos datos' },
   ROUTE_NOT_FOUND: { statusCode: 404, message: 'La ruta solicitada no existe' },
 

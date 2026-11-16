@@ -74,6 +74,8 @@ paths:
                   $ref: '#/components/examples/ValidationError'
                 INVALID_JSON:
                   $ref: '#/components/examples/InvalidJson'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -148,6 +150,8 @@ paths:
               examples:
                 PRODUCT_NOT_FOUND:
                   $ref: '#/components/examples/ProductNotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '500':
           $ref: '#/components/responses/ServerError'
     delete:

@@ -13,6 +13,7 @@ import { swaggerSpecs } from './docs/swagger.config.js'
 import { requestLogger } from './middlewares/requestLogger.middleware.js'
 import { notFound } from './middlewares/notFound.middleware.js'
 import { createErrorHandler } from './middlewares/errorHandler.middleware.js'
+import { MAX_JSON_BODY_SIZE } from './constants/index.js'
 
 const app = express()
 
@@ -21,7 +22,7 @@ const app = express()
 app.use('/api/health', healthRouter)
 
 app.use(requestLogger) // registra todas las demás peticiones
-app.use(express.json())
+app.use(express.json({ limit: MAX_JSON_BODY_SIZE })) // límite explícito: bodies grandes → 413
 
 app.use('/api/products', productsRouter)
 app.use('/api/orders', ordersRouter)

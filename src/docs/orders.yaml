@@ -111,6 +111,8 @@ paths:
               examples:
                 PRODUCT_NOT_AVAILABLE:
                   $ref: '#/components/examples/ProductNotAvailable'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -238,5 +240,7 @@ paths:
                     error: INVALID_STATUS_TRANSITION
                     message: El pedido no puede pasar a ese estado desde su estado actual
                     details: Para pasar a assigned usá PATCH /api/deliveries/:did/assign
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '500':
           $ref: '#/components/responses/ServerError'

@@ -866,6 +866,20 @@ components:
 
   # ---------- Respuesta 500 común a todos los endpoints ----------
   responses:
+    PayloadTooLarge:
+      description: El body JSON supera los 100 KB
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            PAYLOAD_TOO_LARGE:
+              summary: PAYLOAD_TOO_LARGE
+              value:
+                status: error
+                error: PAYLOAD_TOO_LARGE
+                message: El cuerpo de la petición es demasiado grande
+                details: 'Máximo: 100kb'
     ServerError:
       description: Error inesperado o base de datos inaccesible
       content:

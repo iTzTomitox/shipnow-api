@@ -1,6 +1,20 @@
 import { expect } from 'chai'
 import { api, expectError } from './helpers.js'
 
+// Endpoints que reciben body JSON (los de carga de archivos usan multipart y tienen su propio límite)
+const BODY_ENDPOINTS = [
+  ['post', '/api/products'],
+  ['put', '/api/products/6ac1b4f2a653ca2ad6719999'],
+  ['post', '/api/users'],
+  ['put', '/api/users/6ac1b4f2a653ca2ad6719999'],
+  ['post', '/api/orders'],
+  ['patch', '/api/orders/6ac1b4f2a653ca2ad6719999/status'],
+  ['post', '/api/deliveries'],
+  ['patch', '/api/deliveries/6ac1b4f2a653ca2ad6719999/assign'],
+  ['post', '/api/mocks/seed'],
+  ['post', '/api/mocks/generateData']
+]
+
 describe('Funcional: documentación y errores generales', () => {
   it('GET /api/docs/ sirve Swagger UI (HTML)', async () => {
     const res = await api().get('/api/docs/')
@@ -27,20 +41,18 @@ describe('Funcional: documentación y errores generales', () => {
   it('JSON mal formado → 400 INVALID_JSON en todos los endpoints que reciben body', async () => {
     // El error lo lanza express.json() antes de llegar a la ruta: se recorre cada endpoint
     // documentado con body para confirmar que todos responden con el formato común
-    const bodyEndpoints = [
-      ['post', '/api/products'],
-      ['put', '/api/products/6ac1b4f2a653ca2ad6719999'],
-      ['post', '/api/users'],
-      ['put', '/api/users/6ac1b4f2a653ca2ad6719999'],
-      ['post', '/api/orders'],
-      ['patch', '/api/orders/6ac1b4f2a653ca2ad6719999/status'],
-      ['post', '/api/deliveries'],
-      ['patch', '/api/deliveries/6ac1b4f2a653ca2ad6719999/assign'],
-      ['post', '/api/mocks/seed']
-    ]
-    for (const [method, path] of bodyEndpoints) {
+    for (const [method, path] of BODY_ENDPOINTS) {
       const res = await api()[method](path).set('Content-Type', 'application/json').send('{"name": ')
       expectError(res, 'INVALID_JSON')
+    }
+  })
+
+  it('body de más de 100 KB → 413 PAYLOAD_TOO_LARGE en todos los endpoints que reciben body', async () => {
+    // express.json lo corta antes de parsearlo; sin la traducción del error handler sería un 500
+    const bigBody = JSON.stringify({ name: 'x'.repeat(150 * 1024) })
+    for (const [method, path] of BODY_ENDPOINTS) {
+      const res = await api()[method](path).set('Content-Type', 'application/json').send(bigBody)
+      expectError(res, 'PAYLOAD_TOO_LARGE')
     }
   })
 })

@@ -87,6 +87,8 @@ paths:
                   $ref: '#/components/examples/UserAlreadyExists'
                 DUPLICATE_RESOURCE:
                   $ref: '#/components/examples/DuplicateResource'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '500':
           $ref: '#/components/responses/ServerError'
 
@@ -169,6 +171,8 @@ paths:
               examples:
                 USER_ALREADY_EXISTS:
                   $ref: '#/components/examples/UserAlreadyExists'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
         '500':
           $ref: '#/components/responses/ServerError'
     delete:

@@ -93,3 +93,7 @@ export const DB_CONNECTION_STATES = Object.freeze({
   2: 'connecting',
   3: 'disconnecting'
 })
+
+// Tamaño máximo del body JSON: un pedido o un usuario ocupan pocos KB; más que esto
+// es un error o un abuso, y se corta antes de parsearlo
+export const MAX_JSON_BODY_SIZE = '100kb'
