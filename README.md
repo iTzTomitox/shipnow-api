@@ -14,6 +14,7 @@ API REST de logística para gestionar usuarios, productos, pedidos y entregas. P
 - Winston + winston-daily-rotate-file (logging)
 - Swagger / OpenAPI 3 (swagger-jsdoc + swagger-ui-express)
 - Multer (carga de archivos)
+- Helmet (cabeceras de seguridad HTTP)
 
 ## Instalación y ejecución local
 
@@ -595,7 +596,7 @@ El script `pretest` ejecuta `npm install --include=dev` antes de cada `npm test`
 - **Coherencia con Swagger:** cada respuesta de error documentada en `src/docs/*.yaml` tiene un test que la produce (los 500 no se fuerzan, porque requieren tirar la base).
 - **Datos controlados y limpieza:** cada test crea sus propios datos por la API (`tests/functional/helpers.js`) y la base se vacía con `beforeEach(clearDatabase)`. Los tests no dependen del orden ni del estado previo, y la suite pasa dos veces seguidas sin limpiar nada a mano.
 
-## Rendimiento y robustez
+## Rendimiento, seguridad y robustez
 
 | Medida | Qué resuelve |
 |---|---|
@@ -604,6 +605,7 @@ El script `pretest` ejecuta `npm install --include=dev` antes de cada `npm test`
 | **Consultas livianas** | `.lean()` devuelve objetos planos (sin la sobrecarga de los documentos de Mongoose), la proyección excluye `__v` y los `populate` traen solo los campos necesarios |
 | **Página y total en paralelo** | Cada listado hace la consulta de la página y el `countDocuments` con `Promise.all` |
 | **Límite del body JSON (100 KB)** | Un body más grande se corta antes de parsearlo y responde 413 `PAYLOAD_TOO_LARGE` (los archivos tienen su propio límite de 5 MB) |
+| **Cabeceras de seguridad (Helmet)** | Todas las respuestas llevan `X-Content-Type-Options: nosniff`, `X-Frame-Options`, una `Content-Security-Policy` y demás cabeceras, y no llevan `X-Powered-By` (no se revela que es Express). La CSP no fuerza HTTPS (`upgrade-insecure-requests` desactivado) porque la API puede servirse por HTTP, por ejemplo en Docker en localhost |
 | **Apagado ordenado** | Con `SIGTERM` (lo manda `docker stop`) o `SIGINT` (Ctrl+C), el servidor deja de aceptar conexiones, termina las requests en curso, cierra MongoDB y recién ahí sale. Si tarda más de 10 segundos, fuerza la salida |
 
 ## Notas
