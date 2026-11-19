@@ -2,19 +2,51 @@
 
 API REST de logística para gestionar usuarios, productos, pedidos y entregas. Proyecto integrador de **Programación Backend III** (CoderHouse).
 
-**Estado actual:** Pre-entrega 8 — preparación para producción: health check, paginación, índices, Helmet, apagado ordenado, configuración por entorno e imagen Docker.
+**Estado actual:** Entrega final — API completa, documentada, testeada y lista para correr con Docker Compose (API + MongoDB).
+
+## Funcionalidades
+
+- **Usuarios** con rol `admin`, `user` (cliente) o `driver` (repartidor), con documentos adjuntos (DNI, licencia de conducir).
+- **Productos** con estado calculado a partir del stock.
+- **Pedidos** con snapshot de precios, total calculado y una máquina de estados (`created → assigned → picked_up → in_transit → delivered`, o `cancelled`).
+- **Entregas** con asignación de repartidor, que sincroniza la entrega y el pedido, y **tracking** del envío.
+- **Comprobante de entrega** (foto o PDF) que cierra el pedido.
+- **Listados paginados** y filtrables, con índices en MongoDB.
+- **Errores uniformes** desde un diccionario único, **logging** con Winston y **documentación** con Swagger.
+- **Tests** unitarios y funcionales con Mocha, Chai y Supertest (168 casos).
+- **Producción:** health check, Helmet, apagado ordenado, imagen Docker y Docker Compose.
+
+## Índice
+
+1. [Tecnologías](#tecnologías)
+2. [Instalación y ejecución local](#instalación-y-ejecución-local)
+3. [Ejecución con Docker](#ejecución-con-docker)
+4. [Variables de entorno](#variables-de-entorno)
+5. [Estructura del proyecto](#estructura-del-proyecto)
+6. [Arquitectura por capas](#arquitectura-por-capas)
+7. [Por qué separé la lógica entre Service y Repository](#por-qué-separé-la-lógica-entre-service-y-repository)
+8. [Constantes del dominio](#constantes-del-dominio)
+9. [Documentación interactiva (Swagger)](#documentación-interactiva-swagger)
+10. [Endpoints](#endpoints)
+11. [Carga de archivos](#carga-de-archivos)
+12. [Manejo de errores](#manejo-de-errores)
+13. [Logging](#logging)
+14. [Testing](#testing)
+15. [Rendimiento, seguridad y robustez](#rendimiento-seguridad-y-robustez)
+16. [Notas](#notas)
 
 ## Tecnologías
 
 - Node.js 24 con ES Modules
 - Express 5
-- MongoDB Atlas + Mongoose 9
+- MongoDB (Atlas en desarrollo, contenedor en Docker Compose) + Mongoose 9
 - dotenv
 - Mocha + Chai + Supertest + mongodb-memory-server (tests)
 - Winston + winston-daily-rotate-file (logging)
 - Swagger / OpenAPI 3 (swagger-jsdoc + swagger-ui-express)
 - Multer (carga de archivos)
 - Helmet (cabeceras de seguridad HTTP)
+- Docker + Docker Compose
 
 ## Instalación y ejecución local
 
@@ -176,13 +208,13 @@ src/
 ├── controllers/     # única puerta de entrada HTTP: req/res y status codes
 ├── docs/            # Swagger: configuración y documentación OpenAPI en YAML
 ├── errors/          # AppError y diccionario de errores (código → HTTP + mensaje)
-├── middlewares/     # 404 de rutas inexistentes y middleware global de errores
+├── middlewares/     # errores (global y 404), log de cada request y carga de archivos (Multer)
 ├── mocks/           # generadores de datos simulados (funciones puras, sin base de datos)
 ├── models/          # esquemas de Mongoose, sin lógica
 ├── repositories/    # único lugar que conoce Mongoose/MongoDB
 ├── routes/          # solo conectan path con método del controller
 ├── services/        # reglas de negocio
-├── utils/           # helpers (archivos: metadatos, mover y borrar; paginación)
+├── utils/           # helpers: archivos (metadatos, mover, borrar) y paginación
 ├── app.js           # arma Express (sin abrir puerto)
 └── server.js        # conecta a MongoDB y levanta el servidor
 tests/
@@ -221,7 +253,8 @@ El criterio fue: **el Service decide, el Repository ejecuta.**
 **En el Repository** quedó todo lo que es acceso a datos, que cambiaría si cambia la base de datos y no el negocio:
 
 - **Proyección por defecto:** nunca devuelve el campo interno `__v`.
-- **Orden por defecto:** los más nuevos primero.
+- **Orden por defecto:** los más nuevos primero, con `_id` de desempate para que las páginas sean estables.
+- **Paginación:** aplica `skip` y `limit`, y cuenta el total en paralelo. Los valores y sus topes los valida el Service.
 - **`.lean()`:** devuelve objetos planos en lugar de documentos de Mongoose.
 - **Ids con formato inválido:** devuelve `null` en lugar de dejar escapar un `CastError` de Mongoose. Así el Service solo ve "no existe" y responde 404, sin saber qué es un ObjectId.
 - **Filtros:** sabe filtrar por `status` o `role` cuando se lo piden, pero no decide cuándo filtrar.
@@ -241,6 +274,14 @@ Roles y estados se definen una sola vez en `src/constants/index.js`, congelados 
 | `DELIVERY_PRIORITY` | `low`, `normal`, `high` |
 | `DELIVERY_STATUS` | `pending`, `assigned`, `in_transit`, `delivered` |
 | `MAX_MOCK_ITEMS` | `100` (máximo de registros por pedido de mocks) |
+| `LOG_LEVELS` | `fatal` 0, `error` 1, `warning` 2, `info` 3, `http` 4, `debug` 5 |
+| `DOCUMENT_TYPES` | `user_document`, `driver_license`, `delivery_proof` |
+| `UPLOAD_FOLDERS` | Subcarpeta de `uploads/` según el tipo de documento |
+| `ALLOWED_FILE_TYPES` | PDF, JPG y PNG (formato → extensión con la que se guarda) |
+| `MAX_FILE_SIZE_MB` | `5` |
+| `MAX_JSON_BODY_SIZE` | `100kb` |
+| `PAGINATION` | Página `1` y `10` resultados por defecto, máximo `100` |
+| `DB_CONNECTION_STATES` | Estados de la conexión de Mongoose (para el health check) |
 
 `src/utils/constants.js` re-exporta el mismo contenido (la consigna menciona las dos rutas).
 
@@ -258,9 +299,11 @@ La configuración está separada de las rutas: `src/docs/swagger.config.js` defi
 | `schemas.yaml` | Schemas reutilizables (usuario, producto, pedido, item de pedido, entrega, tracking, mocks, respuesta exitosa y respuesta de error), parámetros de ruta y un ejemplo por cada código de error |
 | `users.yaml`, `products.yaml`, `orders.yaml`, `deliveries.yaml` | Endpoints de cada módulo: método, descripción, parámetros, body, respuesta exitosa y cada error posible |
 | `mocks.yaml` | Endpoints de mocks y sus alias del temario |
+| `uploads.yaml` | Los dos endpoints de carga de archivos (`multipart/form-data`) |
+| `health.yaml` | `GET /api/health` |
 | `logger.yaml` | `GET /api/loggerTest` (herramienta interna) |
 
-**Módulos documentados (tags):** Users, Products, Orders, Deliveries, Mocks y Logger.
+**Módulos documentados (tags):** Health, Users, Products, Orders, Deliveries, Mocks y Logger.
 
 Aclaraciones para probar desde Swagger UI:
 
@@ -321,6 +364,7 @@ Lo usan Docker y el monitoreo para saber si la API puede atender. No expone info
 | POST | `/api/users` | `{"firstName": "Ana", "lastName": "Pérez", "email": "ana@test.com"}` | Crea un usuario con rol `user` por defecto (409 si el email ya existe) |
 | PUT | `/api/users/:uid` | `{"role": "driver"}` | Actualiza campos |
 | DELETE | `/api/users/:uid` | — | Elimina un usuario |
+| POST | `/api/users/:uid/documents` | `multipart/form-data` | Agrega un documento o licencia (ver [Carga de archivos](#carga-de-archivos)) |
 
 ### Pedidos — `/api/orders`
 
@@ -332,6 +376,7 @@ Lo usan Docker y el monitoreo para saber si la API puede atender. No expone info
 | POST | `/api/orders` | `{"customer": "ID_USUARIO", "items": [{"product": "ID_PRODUCTO", "quantity": 2}], "deliveryAddress": "Av. Siempre Viva 742", "priority": "high"}` | Crea un pedido (201) |
 | PATCH | `/api/orders/:oid/status` | `{"status": "picked_up"}` | Cambia el estado respetando las transiciones válidas (`assigned` solo se alcanza asignando repartidor) |
 | GET | `/api/orders/:oid/tracking` | — | Seguimiento: estado del pedido + su entrega y repartidor (`delivery: null` si todavía no tiene) |
+| POST | `/api/orders/:oid/proof` | `multipart/form-data` | Comprobante de entrega: con el pedido `in_transit` lo pasa a `delivered` (ver [Carga de archivos](#carga-de-archivos)) |
 
 Al crear un pedido, el cliente envía solo el id y la cantidad de cada producto. El service valida que el cliente exista y tenga rol `user`, y que cada producto exista y esté `available`. Copia el nombre y el precio de cada producto (snapshot), calcula el `total` y fija el estado `created`. `priority` es opcional (`low`, `normal` o `high`; por defecto `normal`).
 
@@ -367,7 +412,9 @@ Flujo completo de un envío:
 POST /api/orders                      → pedido created
 POST /api/deliveries                  → entrega pending
 PATCH /api/deliveries/:did/assign     → entrega y pedido assigned
-PATCH /api/orders/:oid/status         → picked_up → in_transit → delivered
+PATCH /api/orders/:oid/status         → picked_up → in_transit
+POST /api/orders/:oid/proof           → comprobante de entrega: in_transit → delivered
+                                        (o PATCH .../status con delivered, sin comprobante)
 GET /api/orders/:oid/tracking         → estado del pedido + entrega + repartidor en cualquier momento
 ```
 
@@ -531,16 +578,15 @@ Todos los errores salen de **un único lugar**: el middleware global `src/middle
 | `DELIVERY_ALREADY_EXISTS` | 409 | El pedido ya tiene una entrega |
 | `DELIVERY_ALREADY_ASSIGNED` | 409 | La entrega ya no está `pending` (ya tiene repartidor) |
 | `ORDER_NOT_DELIVERABLE` | 409 | El pedido no está `created` (por ejemplo, está cancelado o ya asignado) |
-| `MOCK_GENERATION_ERROR` | 500 | Falló la inserción de mocks en MongoDB |
 | `FILE_TOO_LARGE` | 413 | El archivo supera los 5 MB |
 | `PAYLOAD_TOO_LARGE` | 413 | El body JSON supera los 100 KB |
+| `MOCK_GENERATION_ERROR` | 500 | Falló la inserción de mocks en MongoDB |
 | `FILE_UPLOAD_ERROR` | 500 | No se pudo guardar el archivo en disco |
-| `SERVICE_UNAVAILABLE` | 503 | Health check sin conexión con MongoDB |
 | `DATABASE_ERROR` | 500 | MongoDB inaccesible |
 | `INTERNAL_SERVER_ERROR` | 500 | Error inesperado |
+| `SERVICE_UNAVAILABLE` | 503 | Health check sin conexión con MongoDB |
 
-Los errores que no lanza la aplicación también se traducen al formato común: un JSON mal formado pasa a `INVALID_JSON`, una validación de Mongoose a `VALIDATION_ERROR`, un índice único violado (E11000) a `DUPLICATE_RESOURCE`, MongoDB caído a `DATABASE_ERROR` y cualquier otro a `INTERNAL_SERVER_ERROR`.
-
+Los errores que no lanza la aplicación también se traducen al formato común: un JSON mal formado pasa a `INVALID_JSON`, un body de más de 100 KB a `PAYLOAD_TOO_LARGE`, los errores de Multer a `FILE_TOO_LARGE` o `UNEXPECTED_FILE_FIELD`, una validación de Mongoose a `VALIDATION_ERROR`, un índice único violado (E11000) a `DUPLICATE_RESOURCE`, MongoDB caído a `DATABASE_ERROR` y cualquier otro a `INTERNAL_SERVER_ERROR`.
 
 ### Cómo probar los casos inválidos
 
@@ -581,7 +627,7 @@ Logger centralizado con [Winston](https://github.com/winstonjs/winston) y rotaci
 | `error` | 1 | Errores inesperados del servidor (5xx), con el stack |
 | `warning` | 2 | Errores esperados (4xx: recurso inexistente, datos inválidos, transición inválida, mocks inválidos, ruta inexistente), pedido sin repartidor, compensaciones |
 | `info` | 3 | Arranque, conexión a MongoDB, pedido creado, cambio de estado, repartidor asignado, mocks generados |
-| `http` | 4 | Cada petición: método, ruta, status y duración |
+| `http` | 4 | Cada petición: método, ruta, status y duración (salvo `/api/health`, para no llenar los logs) |
 | `debug` | 5 | Detalle para desarrollo |
 
 En Winston, **menor número = más importante**, y el nivel mínimo incluye todos los de número menor o igual. Por eso `fatal` es 0. El ejemplo del material del curso numera los niveles al revés (`debug: 0 ... fatal: 5`); con esa tabla, el archivo de errores recibiría todos los niveles salvo `fatal`, y no se cumpliría que `error.log` contenga solo `error` y `fatal`.
@@ -649,7 +695,6 @@ Resultado esperado:
 | `logs/<fecha>/combined.log` | `fatal`, `error`, `warning` e `info` |
 | `logs/<fecha>/error.log` | Solo `fatal` y `error` |
 
-
 ## Testing
 
 ### Herramientas
@@ -692,8 +737,12 @@ El script `pretest` ejecuta `npm install --include=dev` antes de cada `npm test`
 | `flow.test.js` | Flujo principal | Pedido → entrega → asignar repartidor → `picked_up` → `in_transit` → `delivered`, con el tracking en cada etapa |
 | `mocks.test.js` | Mocks | Las 8 rutas de vista previa y sus alias, seed simple y completo (verificando relaciones en la base); cantidades inválidas |
 | `logger.test.js` | Logger | `GET /api/loggerTest` |
-| `docs.test.js` | Swagger y errores generales | `/api/docs` y `/api/docs.json`, ruta inexistente, JSON mal formado en todos los endpoints con body |
+| `docs.test.js` | Swagger y errores generales | `/api/docs` y `/api/docs.json`, ruta inexistente, JSON mal formado y body de más de 100 KB en todos los endpoints con body |
 | `uploads.test.js` | Carga de archivos | Documento PDF y licencia PNG (carpeta correcta y archivo en disco), comprobante con el pedido `in_transit` (pasa a `delivered`) y su reemplazo (borra el anterior); sin archivo, formato no permitido, más de 5 MB, campo equivocado, tipo de documento inválido, entidad inexistente, estado no válido y subidas simultáneas, verificando que no queden archivos huérfanos |
+| `pagination.test.js` | Paginación | Metadatos, recorrido de páginas sin repetidos, combinación con filtros, `page` y `limit` inválidos en los 4 listados |
+| `health.test.js` | Health check | 200 con exactamente los campos esperados (sin datos sensibles) y 503 con la base desconectada |
+| `security.test.js` | Helmet | Cabeceras de seguridad en respuestas exitosas, errores, health y Swagger |
+| `production.test.js` | Modo producción | Levanta la app con `NODE_ENV=production` en otro proceso: sin mocks ni `loggerTest`, sin `details` y con Swagger filtrado |
 
 **Tests unitarios** (`tests/unit/`, sin base de datos): reglas de negocio de los services con repositories falsos (inyectados por constructor), configuración, constantes, diccionario de errores, middlewares, logger y generadores de mocks.
 
