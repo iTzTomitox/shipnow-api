@@ -1,0 +1,35 @@
+# Lo que NO se manda a Docker al construir la imagen
+
+# Dependencias: se instalan adentro con npm ci (las de Windows no sirven en Linux)
+node_modules
+
+# Secretos: las variables se pasan al correr el contenedor, nunca dentro de la imagen
+.env
+.env.*
+!.env.example
+
+# Control de versiones y herramientas del editor
+.git
+.gitignore
+.vscode
+.idea
+
+# Datos generados en ejecución
+logs
+uploads
+coverage
+*.log
+
+# Tests y documentación: no se usan en producción
+tests
+.mocharc.json
+*.md
+
+# Archivos temporales
+*.tmp
+.DS_Store
+Thumbs.db
+
+# El propio Dockerfile
+Dockerfile
+.dockerignore
