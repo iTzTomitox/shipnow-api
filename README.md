@@ -2,7 +2,7 @@
 
 API REST de logística para gestionar usuarios, productos, pedidos y entregas. Proyecto integrador de **Programación Backend III** (CoderHouse).
 
-**Estado actual:** Pre-entrega 7 — carga de archivos, documentos y comprobantes con Multer.
+**Estado actual:** Pre-entrega 8 — preparación para producción: health check, paginación, índices, Helmet, apagado ordenado, configuración por entorno e imagen Docker.
 
 ## Tecnologías
 
