@@ -46,7 +46,41 @@ npm test
 
 ## Ejecución con Docker
 
-La imagen corre la API en **modo producción**: sin mocks ni prueba del logger, sin `details` en los errores y con logs desde `info`.
+La imagen corre la API en **modo producción**: sin mocks ni prueba del logger, sin `details` en los errores y con logs desde `info`. Hay dos formas de usarla.
+
+### Opción A: Docker Compose (API + MongoDB, recomendada)
+
+Levanta la API y una base MongoDB propia con un solo comando. No necesita `.env` ni Atlas.
+
+```bash
+docker compose up -d --build
+```
+
+```bash
+docker compose ps
+```
+
+Los dos servicios tienen que aparecer como `healthy`. La API queda en [http://localhost:8080/api/docs](http://localhost:8080/api/docs).
+
+| Comando | Qué hace |
+|---|---|
+| `docker compose logs -f api` | Sigue los logs de la API |
+| `docker compose down` | Detiene y borra los contenedores; los **datos se conservan** en los volúmenes |
+| `docker compose down -v` | Detiene todo y **borra también los datos** (base, archivos subidos y logs) |
+
+Decisiones del `docker-compose.yml`:
+
+| Decisión | Por qué |
+|---|---|
+| `depends_on` con `condition: service_healthy` | La API arranca recién cuando MongoDB responde al `ping`; si arrancara antes, la conexión fallaría y la API no levantaría |
+| `MONGODB_URI: mongodb://mongo:27017/shipnow` | Dentro de la red de Compose, cada servicio se llama por su nombre (`mongo`) |
+| MongoDB sin `ports` | La base solo es accesible desde la API, no desde afuera; por eso en este entorno local no usa usuario y clave |
+| Volúmenes `mongo-data`, `uploads` y `logs` | Los datos, los archivos subidos y los logs sobreviven a `docker compose down` y a reconstruir la imagen |
+| `restart: unless-stopped` | Si un contenedor se cae, Docker lo vuelve a levantar |
+
+Si MongoDB se cae, `/api/health` responde 503 y Docker marca la API como `unhealthy`; cuando MongoDB vuelve, la API se reconecta sola.
+
+### Opción B: solo la API, con tu base de Atlas
 
 1. Construir la imagen:
 
@@ -86,7 +120,7 @@ docker stop shipnow
 docker rm shipnow
 ```
 
-### Decisiones del Dockerfile
+### Decisiones del Dockerfile (aplican a las dos opciones)
 
 | Decisión | Por qué |
 |---|---|
@@ -157,6 +191,7 @@ tests/
 └── functional/      # endpoints reales con Supertest contra MongoDB en memoria
 uploads/             # archivos subidos (se crea en ejecución, ignorada por git)
 Dockerfile           # imagen de producción
+docker-compose.yml   # API + MongoDB con un solo comando
 .dockerignore        # lo que no entra a la imagen (node_modules, .env, .git, logs, tests...)
 ```
 
