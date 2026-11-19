@@ -44,6 +44,61 @@ npm run dev
 npm test
 ```
 
+## Ejecución con Docker
+
+La imagen corre la API en **modo producción**: sin mocks ni prueba del logger, sin `details` en los errores y con logs desde `info`.
+
+1. Construir la imagen:
+
+```bash
+docker build -t shipnow-api .
+```
+
+2. Correr el contenedor. Las variables se pasan al correr, nunca dentro de la imagen: `--env-file` lee tu `.env` y las `-e` pisan `NODE_ENV` y `PORT` con los valores de producción:
+
+```bash
+docker run -d --name shipnow -p 8080:8080 --env-file .env -e NODE_ENV=production -e PORT=8080 shipnow-api
+```
+
+3. Verificar:
+
+```bash
+curl http://localhost:8080/api/health
+```
+
+```bash
+docker ps
+```
+
+```bash
+docker logs shipnow
+```
+
+En cuanto pasa el primer chequeo (unos segundos), `docker ps` muestra el contenedor como `healthy`: Docker consulta `/api/health` por su cuenta. Swagger queda en [http://localhost:8080/api/docs](http://localhost:8080/api/docs).
+
+4. Detener el contenedor (con apagado ordenado) y borrarlo:
+
+```bash
+docker stop shipnow
+```
+
+```bash
+docker rm shipnow
+```
+
+### Decisiones del Dockerfile
+
+| Decisión | Por qué |
+|---|---|
+| `node:24-alpine` | Imagen mínima (menos tamaño y menos superficie de ataque), con la misma versión mayor de Node que en desarrollo |
+| Copiar primero `package*.json` y después `src` | Docker cachea por capas: si solo cambia el código, no reinstala las dependencias |
+| `npm ci --omit=dev` | Instala exactamente lo del `package-lock.json` y sin las herramientas de testing |
+| Usuario `node` (no root) | Si alguien compromete la app, no controla el contenedor |
+| `HEALTHCHECK` contra `/api/health` | Docker sabe si la API está sana (503 si se cae MongoDB) |
+| `CMD ["node", "src/server.js"]` en lugar de `npm start` | Node recibe directamente el `SIGTERM` de `docker stop` y hace el apagado ordenado |
+| Logs por consola | `docker logs` lee la salida del proceso; los archivos de `logs/` dentro del contenedor se pierden al borrarlo |
+| `.dockerignore` | El `.env` (secretos), `node_modules` de Windows, `.git`, logs, uploads y tests no entran a la imagen |
+
 ## Variables de entorno
 
 | Variable | Descripción | Ejemplo |
@@ -62,6 +117,22 @@ Error: Faltan variables de entorno críticas: MONGODB_URI. Revisá tu archivo .e
 
 `process.env` se lee **únicamente** en `src/config/env.config.js`; el resto del proyecto importa el objeto de configuración ya validado y congelado.
 
+### Diferencias por entorno
+
+| | `development` | `production` | `test` |
+|---|---|---|---|
+| Endpoints de negocio (`/api/users`, `/api/products`, `/api/orders`, `/api/deliveries`, uploads) | Sí | Sí | Sí |
+| `GET /api/health` | Sí | Sí | Sí |
+| Swagger (`/api/docs`, `/api/docs.json`) | Completo | Sin las herramientas internas | Completo |
+| Mocks (`/api/mocks/*`) y `GET /api/loggerTest` | Sí | **No se montan** (404) | Sí |
+| `details` en las respuestas de error | Sí | **No** | Sí |
+| Logs | Consola con colores y archivos, desde `debug` | Consola sin colores y archivos, desde `info` | Silenciosos |
+
+**Criterio para los endpoints internos:** un endpoint es interno si existe para desarrollar o probar, y no para los clientes de la API. Mocks y `loggerTest` son internos: en producción **no se montan** (no basta con ocultarlos de Swagger, porque una ruta montada se puede llamar igual) y tampoco se documentan. Por qué los demás sí quedan en producción:
+
+- **Health check:** es para operar la API (Docker, monitoreo), y solo informa estado, entorno, uptime, hora y conexión a la base.
+- **Swagger:** documenta endpoints que ya son públicos, así que no agrega exposición. Es la referencia para quien consume la API.
+
 ## Estructura del proyecto
 
 ```
@@ -77,7 +148,7 @@ src/
 ├── repositories/    # único lugar que conoce Mongoose/MongoDB
 ├── routes/          # solo conectan path con método del controller
 ├── services/        # reglas de negocio
-├── utils/           # helpers (archivos: metadatos, mover y borrar)
+├── utils/           # helpers (archivos: metadatos, mover y borrar; paginación)
 ├── app.js           # arma Express (sin abrir puerto)
 └── server.js        # conecta a MongoDB y levanta el servidor
 tests/
@@ -85,6 +156,8 @@ tests/
 ├── unit/            # reglas de negocio con repositories falsos (sin base de datos)
 └── functional/      # endpoints reales con Supertest contra MongoDB en memoria
 uploads/             # archivos subidos (se crea en ejecución, ignorada por git)
+Dockerfile           # imagen de producción
+.dockerignore        # lo que no entra a la imagen (node_modules, .env, .git, logs, tests...)
 ```
 
 ## Arquitectura por capas
@@ -483,7 +556,7 @@ En Winston, **menor número = más importante**, y el nivel mínimo incluye todo
 | Entorno | Nivel mínimo | Consola | `error.log` | `combined.log` |
 |---|---|---|---|---|
 | `development` | `debug` | Sí, con colores | `error` y `fatal` | `info` en adelante |
-| `production` | `info` | No | `error` y `fatal` | `info` en adelante |
+| `production` | `info` | Sí, sin colores (la lee `docker logs`) | `error` y `fatal` | `info` en adelante |
 | `test` | — | No (silencioso) | No | No |
 
 El nivel mínimo se puede cambiar con la variable opcional `LOG_LEVEL`.
