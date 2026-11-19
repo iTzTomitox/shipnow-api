@@ -1,0 +1,43 @@
+# ShipNow API + MongoDB con un solo comando: docker compose up -d --build
+# Todo corre en modo producción; la base es local (no hace falta Atlas).
+
+name: shipnow # nombre del proyecto en Docker (contenedores shipnow-api-1 y shipnow-mongo-1)
+
+services:
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db # los datos sobreviven a docker compose down
+    # Sin "ports": MongoDB solo es accesible desde la red interna de Compose (la API),
+    # no desde afuera. Por eso no necesita usuario y clave en este entorno local.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  api:
+    build: .
+    image: shipnow-api
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy # la API arranca recién cuando MongoDB responde
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      # "mongo" es el nombre del servicio: Compose lo resuelve como hostname en su red
+      MONGODB_URI: mongodb://mongo:27017/shipnow
+      LOG_LEVEL: info
+    ports:
+      - "8080:8080"
+    volumes:
+      - uploads:/app/uploads # archivos subidos (documentos, licencias, comprobantes)
+      - logs:/app/logs # logs rotados por día
+
+volumes:
+  mongo-data:
+  uploads:
+  logs:

@@ -30,6 +30,7 @@ tests
 .DS_Store
 Thumbs.db
 
-# El propio Dockerfile
+# Los archivos de Docker
 Dockerfile
+docker-compose.yml
 .dockerignore
